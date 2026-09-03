@@ -10,8 +10,8 @@
  * - 在播放器顶部弹出友好提示(可关闭)
  * - 关闭后用 localStorage 记住,本会话不再骚扰
  * - 不阻断播放,只是引导用户:
- *   ① 换 Edge / Safari 浏览器
- *   ② 安装 Emby 客户端 (推荐)
+ *   ① 装 Kodi + Emby 插件 (跨平台、全免费、自带 DTS 解码)
+ *   ② 或换 Edge / Safari (支持 Dolby AC-3)
  *
  * 服务端无依赖,纯前端组件。
  */
@@ -139,27 +139,25 @@ export const AudioCodecWarning: React.FC<AudioCodecWarningProps> = ({
             {/* 解决方案 */}
             <div>
               <p className="font-medium mb-1">🛠️ 推荐解决方案:</p>
-              <ol className="list-decimal list-inside space-y-0.5 ml-1">
+              <ol className="list-decimal list-inside space-y-1.5 ml-1">
+                <li>
+                  🥇 装 <strong>Kodi</strong> + Emby 插件(全平台、全免费、自带 DTS-HD MA 解码):
+                  <br />
+                  <a
+                    href="https://zhuanlan.zhihu.com/p/601657805"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1 text-blue-700 dark:text-blue-300 underline hover:text-blue-900 dark:hover:text-blue-100 break-all"
+                  >
+                    📖 查看完整图文教程(知乎)
+                  </a>
+                </li>
                 {isLimitedBrowser && (
                   <li>
-                    用 <strong>Edge</strong> 或 <strong>Safari</strong> 浏览器打开 moontv
+                    或用 <strong>Edge</strong> / <strong>Safari</strong> 浏览器打开 moontv
                     (支持 Dolby AC-3)
                   </li>
                 )}
-                <li>
-                  安装 <strong>Emby 客户端</strong> 获得完整体验(支持所有高清音轨):
-                  <ul className="list-none ml-4 mt-1 space-y-0.5 text-[11px] sm:text-xs">
-                    <li>
-                      💻 <strong>Windows / Mac / Linux</strong> → Emby Theater (官方,免费)
-                    </li>
-                    <li>
-                      📱 <strong>iOS / Apple TV</strong> → Infuse (付费,极强)
-                    </li>
-                    <li>
-                      🤖 <strong>Android</strong> → Emby for Android (官方)
-                    </li>
-                  </ul>
-                </li>
               </ol>
             </div>
           </div>
