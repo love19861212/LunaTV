@@ -28,6 +28,7 @@ import DownloadButtons from '@/components/play/DownloadButtons';
 import FavoriteButton from '@/components/play/FavoriteButton';
 import NetDiskButton from '@/components/play/NetDiskButton';
 import CollapseButton from '@/components/play/CollapseButton';
+import AudioCodecWarning from '@/components/play/AudioCodecWarning';
 import BackToTopButton from '@/components/play/BackToTopButton';
 import LoadingScreen from '@/components/play/LoadingScreen';
 import PlayInfoPanel from '@/components/play/PlayInfoPanel';
@@ -6231,6 +6232,7 @@ function PlayPageClient() {
 
   return (
     <>
+      <AudioCodecWarning tracks={audioTracks} />
       <PageLayout activePath='/play'>
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20 pb-40 md:pb-safe-bottom'>
         {/* 第一行：影片标题（小屏幕用，大屏幕在 PlayInfoPanel 里） */}
