@@ -2818,8 +2818,8 @@ function PlayPageClient() {
           };
         }
         // 拦截分片请求：处理伪装成 JPEG 的非标准分片
-        // （部分源如爱奇艺、百度云zy、黑料资源的分片为"假 JPEG 头 + H.264 裸流"，
-        //  hls.js 无法直接解析，需剥头并重打包为标准 MPEG-TS）
+        // （部分源如爱奇艺、百度云zy、黑料资源的分片为"假 JPEG 头 + 标准 TS"，
+        //  hls.js 从第0字节找同步头被干扰，需剥头后交回正常流程）
         if ((context as any).type === 'fragment') {
           const onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (
