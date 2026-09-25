@@ -23,6 +23,10 @@ function create({ url, width, number }, callback) {
 
     function seekAndDraw(index) {
       canvas.toBlob((blob) => {
+        if (!blob) {
+          // canvas 为空（如视频未加载成功）时 toBlob 返回 null，直接跳过避免崩溃
+          return;
+        }
         URL.revokeObjectURL(blobUrl);
         blobUrl = URL.createObjectURL(blob);
 

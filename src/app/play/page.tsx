@@ -2796,8 +2796,10 @@ function PlayPageClient() {
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
+      console.log('[DEBUG] CustomHlsJsLoader instantiated');
       const load = this.load.bind(this);
       this.load = function (context: any, config: any, callbacks: any) {
+        console.log('[DEBUG] CustomHlsJsLoader.load, type=', (context as any)?.type);
         // 拦截manifest和level请求
         if (
           (context as any).type === 'manifest' ||
@@ -4481,6 +4483,7 @@ function PlayPageClient() {
         // HLS 支持配置
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
+            console.log('[DEBUG] customType.m3u8 called, url=', url?.slice?.(0, 100));
             if (!Hls) {
               console.error('HLS.js 未加载');
               return;
