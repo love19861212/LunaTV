@@ -23,9 +23,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           envs: GHCR_TOKEN,GHCR_USER
-        env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          GHCR_USER: ${{ secrets.GHCR_USER }}
           script: |
             set -euo pipefail
             IMAGE='${{ inputs.image }}'
@@ -149,3 +146,7 @@ jobs:
               rollback
               exit 1
             fi
+
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
