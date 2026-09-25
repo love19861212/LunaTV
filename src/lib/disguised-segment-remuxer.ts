@@ -1,33 +1,53 @@
 /**
- * 伪装分片修复器（v3）
+ * 伪装分片修复器（v4）
  *
  * 部分视频源（如 #1 爱奇艺、#27 百度云zy、#56 黑料资源）的 HLS 分片
- * 被伪装成 JPEG 图片，实际结构为：
- *   [假 JPEG 头 + 填充 ~263 字节] + [标准 MPEG-TS]
+ * 被伪装成图片，实际结构为：
+ *   [假图片头 + 填充] + [标准 MPEG-TS]
+ * 伪装头格式会变：v3 时期是 JPEG（FF D8），2026-09-26 起 #1 切到 PNG
+ * （89 50 4E 47…IEND，共 181 字节），m3u8 里分片后缀也是 .png。
  *
  * 浏览器测速只测下载速度所以显示正常，但 hls.js 的 TS 解析器从第 0 字节
  * 开始找 0x47 同步头，被开头的伪装数据干扰，导致 FRAG_PARSING_ERROR、黑屏。
  *
- * 修复：在 hls.js 自定义 Loader 中拦截分片下载，检测 JPEG 伪装，
+ * 修复：在 hls.js 自定义 Loader 中拦截分片下载，检测伪装，
  * 定位真正的 TS 同步位置，切掉伪装头，把干净的 TS 交回 hls.js。
  *
- * v3 变更：
- * - 同步定位放宽为两阶段：先用 PAT 严格校验，失败再退回纯同步校验
- *   （部分分片开头 PAT 位置靠后，严格模式会漏检）
- * - 扫描窗口扩大到 64KB，扫描起点提前到 64 字节，兼容更短/更长的伪装头
+ * v4 变更（相对 v3）：
+ * - 不再只认 JPEG 头：只要分片不是标准 TS（首字节 0x47）也不是 fMP4，
+ *   就视为"疑似伪装"并扫描 TS 同步。JPEG / PNG / GIF / 未来新伪装通用。
+ * - fMP4（box 类型 ftyp/moov/moof/styp/sidx）明确排除，避免误伤。
+ * - 真正的安全网是 findTsSync：10 个连续 188 对齐的 0x47 + PAT 校验，
+ *   在随机数据中误报概率可忽略；找不到则抛错，调用方 catch 后走原流程。
  */
 
 const TS_PACKET = 188;
 const TS_SYNC = 0x47;
 
-/** 是否为伪装分片：以 JPEG SOI (FF D8 FF) 开头 */
-export function isDisguisedSegment(data: Uint8Array): boolean {
+/** fMP4 box 类型：分片若是 fMP4 绝不能动 */
+function isFmp4(data: Uint8Array): boolean {
+  if (data.length < 8) return false;
+  const box = String.fromCharCode(data[4], data[5], data[6], data[7]);
   return (
-    data.length > TS_PACKET * 2 &&
-    data[0] === 0xff &&
-    data[1] === 0xd8 &&
-    data[2] === 0xff
+    box === 'ftyp' ||
+    box === 'moov' ||
+    box === 'moof' ||
+    box === 'styp' ||
+    box === 'sidx'
   );
+}
+
+/**
+ * 是否为疑似伪装分片：
+ * - 首字节 0x47 → 标准 TS，直接放行（最快路径）
+ * - fMP4 → 放行
+ * - 其余（JPEG SOI / PNG 签名 / 其他）→ 视为疑似伪装，交给扫描确认
+ */
+export function isDisguisedSegment(data: Uint8Array): boolean {
+  if (data.length <= TS_PACKET * 2) return false;
+  if (data[0] === TS_SYNC) return false;
+  if (isFmp4(data)) return false;
+  return true;
 }
 
 /** 取指定包的 PID */
@@ -45,7 +65,7 @@ function getPid(data: Uint8Array, packetOffset: number): number {
  *  阶段二（宽松）：仅连续 N 包 188 对齐同步。
  *
  * 10 个连续 188 对齐的 0x47 在随机数据中出现的概率可忽略不计，
- * 因此宽松阶段也不会误判伪装区；PAT 校验只是额外保险。
+ * 因此即使对非图片数据做扫描也不会误判；PAT 校验只是额外保险。
  */
 function findTsSync(data: Uint8Array): number {
   const CONFIRM_PACKETS = 10;
@@ -95,7 +115,8 @@ function findTsSync(data: Uint8Array): number {
  * 主入口：剥掉伪装头，返回干净的 MPEG-TS。
  * @param rawData 分片原始字节
  * @returns 干净 TS 字节；若不是伪装分片返回 null（走原流程）；
- *          若是伪装但找不到 TS 同步则抛出错误（由调用方捕获并降级）
+ *          若疑似伪装但找不到 TS 同步则抛出错误（由调用方捕获并降级，
+ *          原始数据原样交回，不引入新错误）
  */
 export function remuxDisguisedSegment(rawData: Uint8Array): Uint8Array | null {
   if (!isDisguisedSegment(rawData)) return null;

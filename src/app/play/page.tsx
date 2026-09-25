@@ -2840,7 +2840,7 @@ function PlayPageClient() {
                     : null;
               if (bytes && isDisguisedSegment(bytes)) {
                 console.log(
-                  '[伪装分片修复] 检测到 JPEG 伪装分片，正在剥头并重打包为 TS:',
+                  '[伪装分片修复] 检测到伪装分片，正在剥头并重打包为 TS:',
                   (context as any).url?.slice?.(0, 80)
                 );
                 const ts = remuxDisguisedSegment(bytes);
