@@ -1,5 +1,5 @@
 /**
- * 伪装分片修复器（v2 - 简化版）
+ * 伪装分片修复器（v3）
  *
  * 部分视频源（如 #1 爱奇艺、#27 百度云zy、#56 黑料资源）的 HLS 分片
  * 被伪装成 JPEG 图片，实际结构为：
@@ -10,6 +10,11 @@
  *
  * 修复：在 hls.js 自定义 Loader 中拦截分片下载，检测 JPEG 伪装，
  * 定位真正的 TS 同步位置，切掉伪装头，把干净的 TS 交回 hls.js。
+ *
+ * v3 变更：
+ * - 同步定位放宽为两阶段：先用 PAT 严格校验，失败再退回纯同步校验
+ *   （部分分片开头 PAT 位置靠后，严格模式会漏检）
+ * - 扫描窗口扩大到 64KB，扫描起点提前到 64 字节，兼容更短/更长的伪装头
  */
 
 const TS_PACKET = 188;
@@ -25,18 +30,36 @@ export function isDisguisedSegment(data: Uint8Array): boolean {
   );
 }
 
+/** 取指定包的 PID */
+function getPid(data: Uint8Array, packetOffset: number): number {
+  return (
+    ((data[packetOffset + 1] & 0x1f) << 8) | data[packetOffset + 2]
+  );
+}
+
 /**
  * 在数据中定位真正的 TS 包起始位置。
- * 要求：连续 N 个 188 字节间隔的位置都是 0x47。
- * 从较靠后的位置开始扫描，避免 JPEG 区偶然的 0x47 误命中。
+ *
+ * 两阶段策略：
+ *  阶段一（严格）：连续 N 包 188 对齐同步 + 前 32 包内出现 PAT(PID=0)；
+ *  阶段二（宽松）：仅连续 N 包 188 对齐同步。
+ *
+ * 10 个连续 188 对齐的 0x47 在随机数据中出现的概率可忽略不计，
+ * 因此宽松阶段也不会误判伪装区；PAT 校验只是额外保险。
  */
 function findTsSync(data: Uint8Array): number {
-  // 需要连续 10 个包同步才确认，避免伪装区偶然的 0x47 误命中
   const CONFIRM_PACKETS = 10;
-  // 伪装头通常 < 2KB，从 256 字节后开始找，步进 1 字节扫描
-  const SCAN_START = 256;
-  const maxOffset = Math.min(data.length - TS_PACKET * CONFIRM_PACKETS, 8192);
+  // 从 0 开始扫描：伪装头长度不固定，10 包连续同步 + PAT 校验已足够排除误报；
+  // 扫描上限 64KB，覆盖更长的伪装头
+  const SCAN_START = 0;
+  const SCAN_LIMIT = 64 * 1024;
+  const maxOffset = Math.min(
+    data.length - TS_PACKET * CONFIRM_PACKETS,
+    SCAN_START + SCAN_LIMIT
+  );
 
+  // 收集所有通过连续同步校验的候选位置
+  const candidates: number[] = [];
   for (let offset = SCAN_START; offset < maxOffset; offset++) {
     if (data[offset] !== TS_SYNC) continue;
     let ok = true;
@@ -46,17 +69,26 @@ function findTsSync(data: Uint8Array): number {
         break;
       }
     }
-    if (!ok) continue;
-    // 二次验证：检查 PID 分布是否合理（PAT=0 必须在前几个包中出现）
-    let hasPat = false;
-    for (let k = 0; k < CONFIRM_PACKETS; k++) {
-      const pid = ((data[offset + k * TS_PACKET + 1] & 0x1f) << 8) |
-        data[offset + k * TS_PACKET + 2];
-      if (pid === 0x0000) { hasPat = true; break; }
-    }
-    if (hasPat) return offset;
+    if (ok) candidates.push(offset);
   }
-  return -1;
+
+  if (candidates.length === 0) return -1;
+
+  // 阶段一：优先返回带 PAT 校验的候选（PAT 出现在前 32 个包内）
+  for (const offset of candidates) {
+    const checkPackets = Math.min(
+      32,
+      Math.floor((data.length - offset) / TS_PACKET)
+    );
+    for (let k = 0; k < checkPackets; k++) {
+      if (getPid(data, offset + k * TS_PACKET) === 0x0000) {
+        return offset;
+      }
+    }
+  }
+
+  // 阶段二：无 PAT 候选时，取第一个纯同步候选
+  return candidates[0];
 }
 
 /**

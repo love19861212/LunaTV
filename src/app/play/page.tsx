@@ -2811,8 +2811,11 @@ function PlayPageClient() {
           ) {
             // 如果是m3u8文件，处理内容以移除广告分段
             if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
+              // 广告过滤只在去广告开关开启时生效
+              if (blockAdEnabledRef.current) {
+                // 过滤掉广告段 - 实现更精确的广告过滤逻辑
+                response.data = filterAdsFromM3U8(response.data);
+              }
             }
             return onSuccess(response, stats, context, null);
           };
@@ -4564,10 +4567,11 @@ function PlayPageClient() {
                 },
               },
 
-              /* 自定义loader */
-              loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
-                : Hls.DefaultConfig.loader,
+              /* 自定义loader
+                 始终使用自定义 loader：伪装分片修复是播放正确性修复，
+                 不应随去广告开关关闭而失效；广告过滤部分在 loader 内部
+                 按 blockAdEnabledRef.current 单独开关。 */
+              loader: CustomHlsJsLoader,
             });
 
             hls.loadSource(url);
