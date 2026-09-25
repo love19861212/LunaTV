@@ -31,8 +31,10 @@ interface EmbySourceConfig {
 class EmbyManager {
   private static instance: EmbyManager;
   private clients: Map<string, EmbyClient> = new Map();
+  private clientConfigSignatures: Map<string, string> = new Map();
   // 用户级客户端缓存: username -> Map<key, EmbyClient>
   private userClients: Map<string, Map<string, EmbyClient>> = new Map();
+  private userClientConfigSignatures: Map<string, Map<string, string>> = new Map();
 
   private constructor() {}
 
@@ -135,20 +137,27 @@ class EmbyManager {
     if (!this.userClients.has(username)) {
       this.userClients.set(username, new Map());
     }
+    if (!this.userClientConfigSignatures.has(username)) {
+      this.userClientConfigSignatures.set(username, new Map());
+    }
     const userClientMap = this.userClients.get(username)!;
+    const userSignatureMap = this.userClientConfigSignatures.get(username)!;
 
-    // 从缓存获取或创建新实例
-    if (!userClientMap.has(key)) {
-      const sourceConfig = sources.find(s => s.key === key);
-      if (!sourceConfig) {
-        throw new Error(`未找到 Emby 源: ${key}`);
-      }
+    const sourceConfig = sources.find(s => s.key === key);
+    if (!sourceConfig) {
+      throw new Error(`未找到 Emby 源: ${key}`);
+    }
 
-      if (!sourceConfig.enabled) {
-        throw new Error(`Emby 源已禁用: ${sourceConfig.name}`);
-      }
+    if (!sourceConfig.enabled) {
+      throw new Error(`Emby 源已禁用: ${sourceConfig.name}`);
+    }
 
+    // 管理员公共源配置可能在服务运行期间变更。按源配置签名检查缓存，
+    // 让转码、代理和认证等设置在下一个请求立即生效，也兼容多实例部署。
+    const sourceSignature = JSON.stringify(sourceConfig);
+    if (!userClientMap.has(key) || userSignatureMap.get(key) !== sourceSignature) {
       userClientMap.set(key, new EmbyClient(sourceConfig));
+      userSignatureMap.set(key, sourceSignature);
     }
 
     return userClientMap.get(key)!;
@@ -179,8 +188,10 @@ class EmbyManager {
   clearUserCache(username?: string) {
     if (username) {
       this.userClients.delete(username);
+      this.userClientConfigSignatures.delete(username);
     } else {
       this.userClients.clear();
+      this.userClientConfigSignatures.clear();
     }
   }
 
@@ -202,18 +213,20 @@ class EmbyManager {
       key = defaultSource.key;
     }
 
-    // 从缓存获取或创建新实例
-    if (!this.clients.has(key)) {
-      const sourceConfig = sources.find(s => s.key === key);
-      if (!sourceConfig) {
-        throw new Error(`未找到 Emby 源: ${key}`);
-      }
+    const sourceConfig = sources.find(s => s.key === key);
+    if (!sourceConfig) {
+      throw new Error(`未找到 Emby 源: ${key}`);
+    }
 
-      if (!sourceConfig.enabled) {
-        throw new Error(`Emby 源已禁用: ${sourceConfig.name}`);
-      }
+    if (!sourceConfig.enabled) {
+      throw new Error(`Emby 源已禁用: ${sourceConfig.name}`);
+    }
 
+    // 全局/TVBox 场景使用同样的配置签名，避免继续复用旧播放参数。
+    const sourceSignature = JSON.stringify(sourceConfig);
+    if (!this.clients.has(key) || this.clientConfigSignatures.get(key) !== sourceSignature) {
       this.clients.set(key, new EmbyClient(sourceConfig));
+      this.clientConfigSignatures.set(key, sourceSignature);
     }
 
     return this.clients.get(key)!;
@@ -228,8 +241,10 @@ class EmbyManager {
     const result = new Map<string, { client: EmbyClient; config: EmbySourceConfig }>();
 
     for (const source of enabledSources) {
-      if (!this.clients.has(source.key)) {
+      const sourceSignature = JSON.stringify(source);
+      if (!this.clients.has(source.key) || this.clientConfigSignatures.get(source.key) !== sourceSignature) {
         this.clients.set(source.key, new EmbyClient(source));
+        this.clientConfigSignatures.set(source.key, sourceSignature);
       }
       result.set(source.key, {
         client: this.clients.get(source.key)!,
@@ -261,6 +276,7 @@ class EmbyManager {
    */
   clearCache() {
     this.clients.clear();
+    this.clientConfigSignatures.clear();
   }
 }
 
