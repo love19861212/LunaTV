@@ -10,6 +10,11 @@ import Hls from 'hls.js';
 import { Heart, ChevronUp, Download, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
+// 伪装分片修复：部分源的分片伪装成 JPEG，需剥头并重打包为标准 TS
+import {
+  isDisguisedSegment,
+  remuxDisguisedSegment,
+} from '@/lib/disguised-segment-remuxer';
 
 import { useDownload } from '@/contexts/DownloadContext';
 import { normalizeDownloadSource } from '@/lib/download';
@@ -2808,6 +2813,48 @@ function PlayPageClient() {
             if (response.data && typeof response.data === 'string') {
               // 过滤掉广告段 - 实现更精确的广告过滤逻辑
               response.data = filterAdsFromM3U8(response.data);
+            }
+            return onSuccess(response, stats, context, null);
+          };
+        }
+        // 拦截分片请求：处理伪装成 JPEG 的非标准分片
+        // （部分源如爱奇艺、百度云zy、黑料资源的分片为"假 JPEG 头 + H.264 裸流"，
+        //  hls.js 无法直接解析，需剥头并重打包为标准 MPEG-TS）
+        if ((context as any).type === 'fragment') {
+          const onSuccess = callbacks.onSuccess;
+          callbacks.onSuccess = function (
+            response: any,
+            stats: any,
+            context: any
+          ) {
+            try {
+              const raw = response.data;
+              const bytes =
+                raw instanceof ArrayBuffer
+                  ? new Uint8Array(raw)
+                  : raw instanceof Uint8Array
+                    ? raw
+                    : null;
+              if (bytes && isDisguisedSegment(bytes)) {
+                console.log(
+                  '[伪装分片修复] 检测到 JPEG 伪装分片，正在剥头并重打包为 TS:',
+                  (context as any).url?.slice?.(0, 80)
+                );
+                const ts = remuxDisguisedSegment(bytes);
+                if (ts) {
+                  response.data = ts.buffer.slice(
+                    ts.byteOffset,
+                    ts.byteOffset + ts.byteLength
+                  );
+                  console.log(
+                    '[伪装分片修复] 重打包完成，TS 大小:',
+                    ts.byteLength
+                  );
+                }
+              }
+            } catch (e) {
+              // 修复失败则保留原始数据走原流程，避免引入新错误
+              console.warn('[伪装分片修复] 处理失败，使用原始分片:', e);
             }
             return onSuccess(response, stats, context, null);
           };
