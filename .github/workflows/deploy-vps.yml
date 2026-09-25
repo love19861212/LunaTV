@@ -1,0 +1,151 @@
+name: Deploy to VPS (safe)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Docker 镜像（默认 ghcr.io/love19861212/lunatv:latest）'
+        required: false
+        default: 'ghcr.io/love19861212/lunatv:latest'
+      candidate_port:
+        description: '候选容器临时端口（默认 3103）'
+        required: false
+        default: '3103'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH (preflight → candidate → swap → rollback)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          envs: GHCR_TOKEN,GHCR_USER
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          script: |
+            set -euo pipefail
+            IMAGE='${{ inputs.image }}'
+            CANDIDATE_PORT='${{ inputs.candidate_port }}'
+            PROD_PORT='3003'
+            TS=$(date +%Y%m%d-%H%M%S)
+            ROLLBACK_TAG="lunatv-rollback:${TS}"
+
+            log() { echo "[deploy ${TS}] $*"; }
+            # 绝不打印密钥类环境变量的值
+            mask() { echo "$*" | sed -E 's/(PASSWORD|SECRET|TOKEN|KEY)=[^ ]+/\1=***/g'; }
+
+            health_check() {
+              local port="$1" label="$2"
+              log "健康检查 ${label} (127.0.0.1:${port}) ..."
+              for i in $(seq 1 12); do
+                if curl -fsS --max-time 10 "http://127.0.0.1:${port}/api/server-config" 2>/dev/null | grep -q '"Version"'; then
+                  if curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:${port}/"; then
+                    log "健康检查 ${label} 通过"
+                    return 0
+                  fi
+                fi
+                sleep 5
+              done
+              log "健康检查 ${label} 失败"
+              return 1
+            }
+
+            rollback() {
+              log "开始回滚到 ${ROLLBACK_TAG}"
+              docker rm -f lunatv 2>/dev/null || true
+              # 用保存的旧镜像按原环境变量重建（环境变量从备份文件读取，不打印）
+              # shellcheck disable=SC1090
+              source /tmp/lunatv_env_backup.sh
+              # shellcheck disable=SC2154
+              docker run -d --name lunatv --restart=unless-stopped "${RUN_ARGS[@]}" "${ROLLBACK_TAG}"
+              if health_check "${PROD_PORT}" "回滚后生产容器"; then
+                log "回滚成功"
+              else
+                log "回滚后健康检查仍失败，需要人工介入！"
+                exit 1
+              fi
+            }
+
+            # ============ Phase 0: Preflight（只读） ============
+            log "=== Phase 0: Preflight ==="
+            df -h / | tail -1
+            docker info --format 'Docker {{.ServerVersion}} OK' 
+            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|lunatv|kvrocks'
+            git -C /root/LunaTV-v6 fetch origin --quiet
+            git -C /root/LunaTV-v6 log --oneline -3 origin/main
+            CURRENT_IMAGE=$(docker inspect lunatv --format '{{.Config.Image}}')
+            log "当前生产镜像: ${CURRENT_IMAGE}"
+
+            # ============ Phase 1: 拉取新镜像 + 保存回滚点 ============
+            log "=== Phase 1: 拉取镜像 ${IMAGE} ==="
+            # 公开包无需登录；若镜像为私有，在 Secrets 中添加 GHCR_TOKEN（read:packages 权限）即可自动登录
+            if [ -n "${GHCR_TOKEN:-}" ]; then
+              log "检测到 GHCR_TOKEN，执行登录"
+              echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER:-love19861212}" --password-stdin
+            fi
+            if ! docker pull "${IMAGE}"; then
+              log "镜像拉取失败：若为私有包请在仓库 Secrets 添加 GHCR_TOKEN"
+              exit 1
+            fi
+
+            log "=== 保存回滚点 ${ROLLBACK_TAG} ==="
+            docker tag "${CURRENT_IMAGE}" "${ROLLBACK_TAG}"
+
+            # 备份当前容器的 run 参数（环境变量写入文件，不回显到日志）
+            log "备份当前容器配置 ..."
+            ENV_ARGS=$(docker inspect lunatv --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -v '^PATH=' | grep -v '^HOSTNAME=' | grep -v '^NODE_VERSION=' | grep -v '^YARN_VERSION=')
+            {
+              echo 'RUN_ARGS=('
+              echo "  --network moontv-prod-switch-net"
+              echo "  -p 127.0.0.1:${PROD_PORT}:3000"
+              while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                printf '  -e %q\n' "$line"
+              done <<< "$ENV_ARGS"
+              echo ')'
+            } > /tmp/lunatv_env_backup.sh
+            log "容器配置已备份（密钥已屏蔽显示）"
+
+            # ============ Phase 2: 候选容器预检 ============
+            log "=== Phase 2: 启动候选容器 (端口 ${CANDIDATE_PORT}) ==="
+            docker rm -f lunatv-candidate 2>/dev/null || true
+            # shellcheck disable=SC1090
+            source /tmp/lunatv_env_backup.sh
+            CAND_ARGS=()
+            for a in "${RUN_ARGS[@]}"; do
+              case "$a" in
+                -p) CAND_ARGS+=("-p");;
+                127.0.0.1:*) CAND_ARGS+=("127.0.0.1:${CANDIDATE_PORT}:3000");;
+                *) CAND_ARGS+=("$a");;
+              esac
+            done
+            # shellcheck disable=SC2154
+            docker run -d --name lunatv-candidate --restart=no "${CAND_ARGS[@]}" "${IMAGE}"
+            if ! health_check "${CANDIDATE_PORT}" "候选容器"; then
+              log "候选容器健康检查失败，终止部署，生产容器不受影响"
+              docker rm -f lunatv-candidate 2>/dev/null || true
+              exit 1
+            fi
+            log "候选容器验证通过"
+
+            # ============ Phase 3: 切换生产容器 ============
+            log "=== Phase 3: 切换生产容器 ==="
+            docker rm -f lunatv-candidate 2>/dev/null || true
+            docker stop lunatv
+            docker rm lunatv
+            # shellcheck disable=SC1090
+            source /tmp/lunatv_env_backup.sh
+            # shellcheck disable=SC2154
+            docker run -d --name lunatv --restart=unless-stopped "${RUN_ARGS[@]}" "${IMAGE}"
+
+            if health_check "${PROD_PORT}" "新生产容器"; then
+              log "DEPLOY_OK 部署成功，版本: $(curl -fsS --max-time 10 http://127.0.0.1:${PROD_PORT}/api/server-config | grep -o '"Version":"[^"]*"' || true)"
+            else
+              log "新生产容器健康检查失败，执行回滚"
+              rollback
+              exit 1
+            fi
