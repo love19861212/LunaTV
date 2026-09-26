@@ -4603,17 +4603,19 @@ function PlayPageClient() {
         url: videoUrl,
         // 代理包装后的 URL 不带 .m3u8 后缀，ArtPlayer 自动类型检测会失效，
         // 导致 customType.m3u8（含伪装分片修复）被跳过。这里用原始 URL 明确指定类型。
-        type: (() => {
+        // 注意：无法从后缀判断时（如 Emby /stream 直链），必须省略 type，
+        // 传 type: undefined 会触发 ArtPlayer 校验抛错；省略则走默认自动检测。
+        ...(() => {
           try {
             const raw = stripVideoPlayProxy(videoUrl) || videoUrl || '';
-            if (/\.m3u8(\?|#|$)/i.test(raw)) return 'm3u8';
-            if (/\.mp4(\?|#|$)/i.test(raw)) return 'mp4';
-            if (/\.webm(\?|#|$)/i.test(raw)) return 'webm';
-            if (/\.mov(\?|#|$)/i.test(raw)) return 'mov';
-            if (/\.mkv(\?|#|$)/i.test(raw)) return 'mkv';
-            if (/\.flv(\?|#|$)/i.test(raw)) return 'flv';
+            if (/\.m3u8(\?|#|$)/i.test(raw)) return { type: 'm3u8' as const };
+            if (/\.mp4(\?|#|$)/i.test(raw)) return { type: 'mp4' as const };
+            if (/\.webm(\?|#|$)/i.test(raw)) return { type: 'webm' as const };
+            if (/\.mov(\?|#|$)/i.test(raw)) return { type: 'mov' as const };
+            if (/\.mkv(\?|#|$)/i.test(raw)) return { type: 'mkv' as const };
+            if (/\.flv(\?|#|$)/i.test(raw)) return { type: 'flv' as const };
           } catch { /* ignore */ }
-          return undefined;
+          return {};
         })(),
         poster: videoCover,
         volume: 0.7,
