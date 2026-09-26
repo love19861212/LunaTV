@@ -2944,10 +2944,15 @@ function PlayPageClient() {
       super(config);
       const load = this.load.bind(this);
       this.load = function (context: any, config: any, callbacks: any) {
+        // 本站转码（VPS ffmpeg 音频转码）生成的 playlist/分片：内容 guaranteed 无广告、
+        // 真实 TS，跳过一切广告过滤与伪装分片处理，避免误伤
+        const ctxUrl = ((context as any).url || '') as string;
+        const isSelfTranscode = ctxUrl.includes('/api/emby/transcode/');
         // 拦截manifest和level请求
         if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
+          !isSelfTranscode &&
+          ((context as any).type === 'manifest' ||
+            (context as any).type === 'level')
         ) {
           const onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (
@@ -2971,7 +2976,10 @@ function PlayPageClient() {
         //  hls.js 从第0字节找同步头被干扰，需剥头后交回正常流程）
         //  兼容 hls.js 不同版本的 type 命名：'fragment' 或 'media-fragment'
         const _fragType = (context as any).type;
-        if (_fragType === 'fragment' || _fragType === 'media-fragment') {
+        if (
+          !isSelfTranscode &&
+          (_fragType === 'fragment' || _fragType === 'media-fragment')
+        ) {
           const onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (
             response: any,

@@ -12,11 +12,20 @@
  * - 会话复用：同一 (embyKey, itemId, 音轨) 只起一个 ffmpeg
  * - HLS 全量保留分片（VOD 风格），会话空闲 20 分钟后回收并删除分片
  * - 并发上限 2 路，磁盘剩余不足 10GB 时拒绝新会话
+ * - 上游取流：用 Node 原生 http/https 模块拉取 Emby 直链，通过 pipe:0 喂给 ffmpeg。
+ *   不让 ffmpeg 直接 HTTP 拉流——部分 Emby 前置（如 69yun 系转发）对
+ *   ffmpeg 内建 HTTP 客户端建连失败（ENOENT），而 Node 的网络栈
+ *   （与站内 Emby API/代理播放同一链路）可正常访问。
+ *   注意：刻意不用 fetch + Readable.fromWeb 做 body 转发——undici 在
+ *   「背压暂停时 socket 先结束」会触发内部断言导致整个 Node 进程崩溃；
+ *   原生 http/https 的 IncomingMessage.pipe() 是经典安全模式。
  */
 
 import { ChildProcess,spawn, spawnSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import os from 'os';
 import path from 'path';
 
@@ -29,6 +38,8 @@ export interface TranscodeSession {
   lastAccess: number;
   failed: boolean;
   failReason?: string;
+  /** 中止上游取流（原生 https），会话销毁时调用 */
+  abortUpstream?: () => void;
 }
 
 export class TranscodeError extends Error {
@@ -38,6 +49,7 @@ export class TranscodeError extends Error {
     | 'NO_DISK'
     | 'START_TIMEOUT'
     | 'FFMPEG_EXIT'
+    | 'UPSTREAM'
     | 'SESSION_GONE';
   constructor(code: TranscodeError['code'], message: string) {
     super(message);
@@ -161,6 +173,11 @@ function destroySession(key: string, reason: string): void {
   if (!s) return;
   sessions.delete(key);
   try {
+    s.abortUpstream?.();
+  } catch {
+    // ignore
+  }
+  try {
     if (s.proc && !s.proc.killed) s.proc.kill('SIGKILL');
   } catch {
     // ignore
@@ -203,6 +220,34 @@ export interface StartSessionOptions {
   audioPos: number;
   /** Emby 直链（ffmpeg 直接拉流） */
   inputUrl: string;
+}
+
+/** 上游预检：Range 取首字节验证可达，返回跟随跳转后的最终 URL */
+async function probeUpstream(inputUrl: string): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(inputUrl, {
+      headers: { Range: 'bytes=0-0' },
+      signal: ctrl.signal,
+      cache: 'no-store',
+      redirect: 'follow',
+    });
+    if (!res.ok || !res.body) {
+      throw new TranscodeError('UPSTREAM', `上游取流失败：HTTP ${res.status}`);
+    }
+    // 只读首个 chunk 即取消，避免整片缓冲；单次 read 无背压风险
+    try {
+      const reader = res.body.getReader();
+      await reader.read();
+      await reader.cancel();
+    } catch {
+      /* ignore */
+    }
+    return res.url || inputUrl;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -248,12 +293,44 @@ export async function getOrStartSession(
   fs.mkdirSync(dir, { recursive: true });
   const playlistPath = path.join(dir, 'playlist.m3u8');
 
+  // 上游取流（两步走）：
+  // 1) 预检：用 fetch 发 Range 小请求验证上游可达，拿到跟随跳转后的最终 URL。
+  //    只读首个 chunk 即 cancel，无背压风险。
+  // 2) 传输：用 Node 原生 http/https 拉取最终 URL，IncomingMessage.pipe()
+  //    喂给 ffmpeg stdin（经典安全模式，不经过 undici body 流）。
+  let finalUrl: string;
+  try {
+    finalUrl = await probeUpstream(opts.inputUrl);
+  } catch (e) {
+    if (e instanceof TranscodeError) throw e;
+    throw new TranscodeError(
+      'UPSTREAM',
+      `上游探测异常：${(e as Error).message}`
+    );
+  }
+
+  const client = finalUrl.startsWith('https:') ? https : http;
+  let upstreamReq: http.ClientRequest | null = null;
+  let upstreamRes: http.IncomingMessage | null = null;
+  const stopUpstream = () => {
+    try {
+      upstreamRes?.destroy();
+    } catch {
+      /* ignore */
+    }
+    try {
+      upstreamReq?.destroy();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const args = [
     '-hide_banner',
     '-loglevel',
     'error',
     '-i',
-    opts.inputUrl,
+    'pipe:0', // 上游由 Node 原生 https 拉取后经 stdin 喂入
     '-map',
     '0:v:0',
     '-map',
@@ -275,13 +352,13 @@ export async function getOrStartSession(
     playlistPath,
   ];
 
-  console.log('[EmbyTranscode] 启动 ffmpeg:', {
+  console.log('[EmbyTranscode] 启动 ffmpeg（pipe 输入）:', {
     id,
     itemId: opts.itemId,
     audioPos: opts.audioPos,
   });
 
-  const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'ignore', 'pipe'] });
   let stderrTail = '';
   proc.stderr?.on('data', (d: Buffer) => {
     stderrTail = (stderrTail + d.toString()).slice(-2000);
@@ -295,8 +372,74 @@ export async function getOrStartSession(
     createdAt: Date.now(),
     lastAccess: Date.now(),
     failed: false,
+    abortUpstream: stopUpstream,
   };
   sessions.set(key, session);
+
+  // 启动上游传输：原生 https 拉流 → pipe → ffmpeg stdin
+  try {
+    upstreamReq = client.get(finalUrl, (incoming) => {
+      upstreamRes = incoming;
+      const sc = incoming.statusCode || 0;
+      if (sc !== 200 && sc !== 206) {
+        incoming.resume();
+        incoming.on('end', () => {
+          try {
+            incoming.destroy();
+          } catch {
+            /* ignore */
+          }
+        });
+        session.failed = true;
+        session.failReason = `上游取流失败：HTTP ${sc}`;
+        try {
+          proc.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      // 首字节到达后取消连接超时（传输中允许慢速）
+      incoming.once('data', () => {
+        try {
+          upstreamReq?.setTimeout(0);
+        } catch {
+          /* ignore */
+        }
+      });
+      incoming.on('error', () => {
+        if (!session.failed && !fs.existsSync(playlistPath)) {
+          session.failed = true;
+          session.failReason = '上游连接中断';
+        }
+      });
+      // stdin EPIPE 保护：ffmpeg 提前退出时忽略写错误
+      proc.stdin?.on('error', () => {
+        /* ffmpeg 已退出，忽略 */
+      });
+      incoming.pipe(proc.stdin as NodeJS.WritableStream);
+    });
+    upstreamReq.on('error', (err) => {
+      if (!session.failed && !fs.existsSync(playlistPath)) {
+        session.failed = true;
+        session.failReason = `上游连接失败：${err.message}`;
+      }
+    });
+    // 连接/首字节超时 30s
+    upstreamReq.setTimeout(30000, () => {
+      try {
+        upstreamReq?.destroy(new Error('上游连接超时（30s 无响应）'));
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch (e) {
+    destroySession(key, '上游请求创建失败');
+    throw new TranscodeError(
+      'UPSTREAM',
+      `上游请求异常：${(e as Error).message}`
+    );
+  }
 
   // 同一片源切换了音轨：回收旧音轨的会话，避免 ffmpeg 堆积
   const siblingPrefix = `${opts.embyKey || 'default'}:${opts.itemId}:a`;
@@ -316,6 +459,8 @@ export async function getOrStartSession(
       playlistExists,
     });
     session.proc = null;
+    // ffmpeg 退出后上游也没有继续拉取的必要，中止以节省带宽
+    stopUpstream();
     if (!playlistExists) {
       session.failed = true;
       session.failReason = stderrTail || `ffmpeg 异常退出 (code=${code})`;
