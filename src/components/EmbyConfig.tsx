@@ -34,6 +34,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
     appendMediaSourceId: false,
     transcodeMp4: false,
     proxyPlay: false,
+    vpsAudioTranscode: true,
     embyAuthorizationHeader: '',
   });
   const [authMode, setAuthMode] = useState<'apikey' | 'password'>('apikey');
@@ -67,6 +68,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
       appendMediaSourceId: false,
       transcodeMp4: false,
       proxyPlay: false,
+      vpsAudioTranscode: true,
       embyAuthorizationHeader: '',
     });
     setEditingSource(null);
@@ -631,6 +633,31 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       formData.proxyPlay ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 选项5: VPS 音频转码 */}
+              <div className='flex items-center justify-between'>
+                <div className='flex-1'>
+                  <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                    VPS 音频转码
+                  </label>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                    影片没有浏览器可解码的音轨时，用服务器 ffmpeg 把音频实时转成 AAC（视频不转码）
+                  </p>
+                </div>
+                <button
+                  type='button'
+                  onClick={() => setFormData({ ...formData, vpsAudioTranscode: !(formData as any).vpsAudioTranscode })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    (formData as any).vpsAudioTranscode !== false ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      (formData as any).vpsAudioTranscode !== false ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>

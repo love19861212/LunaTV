@@ -37,8 +37,8 @@ RUN pnpm run build
 # ---- 第 3 阶段：生成运行时镜像 ----
 FROM node:22-alpine AS runner
 
-# 安装 CA 证书以支持 HTTPS 请求
-RUN apk add --no-cache ca-certificates \
+# 安装 CA 证书以支持 HTTPS 请求，以及 ffmpeg（Emby VPS 音频转码用）
+RUN apk add --no-cache ca-certificates ffmpeg \
     && rm -rf /var/cache/apk/* \
     && rm -rf /tmp/*
 

@@ -34,6 +34,7 @@ import FavoriteButton from '@/components/play/FavoriteButton';
 import NetDiskButton from '@/components/play/NetDiskButton';
 import CollapseButton from '@/components/play/CollapseButton';
 import AudioCodecWarning from '@/components/play/AudioCodecWarning';
+import { detectBrowser, isCodecSupported } from '@/lib/audio-codec-compat';
 import BackToTopButton from '@/components/play/BackToTopButton';
 import LoadingScreen from '@/components/play/LoadingScreen';
 import PlayInfoPanel from '@/components/play/PlayInfoPanel';
@@ -204,6 +205,30 @@ function parseAudioStreamIndexFromUrl(url: string): number {
     return Number(rawValue);
   } catch {
     return -1;
+  }
+}
+
+/** 构建 VPS 音频转码 HLS 地址（URL 必须含 .m3u8，播放器才能识别为 HLS） */
+function buildEmbyTranscodeUrl(
+  itemId: string,
+  embyKey: string | undefined,
+  audioStreamIndex: number
+): string {
+  const q = new URLSearchParams({ itemId });
+  if (embyKey) q.set('embyKey', embyKey);
+  q.set('audioStreamIndex', String(audioStreamIndex));
+  return `/api/emby/transcode/proxy/playlist.m3u8?${q.toString()}`;
+}
+
+/** 探测转码 playlist 是否真实可用（防止播放器吃到错误 JSON） */
+async function probeTranscodePlaylist(url: string): Promise<boolean> {
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return false;
+    const text = (await resp.text()).slice(0, 200);
+    return text.includes('#EXTM3U');
+  } catch {
+    return false;
   }
 }
 
@@ -637,6 +662,16 @@ function PlayPageClient() {
   const [isAudioTrackSwitching, setIsAudioTrackSwitching] = useState(false);
   const audioTracksRef = useRef(audioTracks);
   const currentAudioTrackRef = useRef(currentAudioTrack);
+
+  // VPS 音频转码状态（Emby 源码 DTS/TrueHD → AAC）
+  const [isAudioTranscoding, setIsAudioTranscoding] = useState(false);
+  const isAudioTranscodingRef = useRef(false);
+  // 当前转码会话信息（切音轨/换集时重建转码地址用）
+  const transcodeInfoRef = useRef<{
+    itemId: string;
+    embyKey?: string;
+    url: string;
+  } | null>(null);
 
   // 🚀 使用 useDanmu Hook 管理弹幕
   const danmuScopeKey = `${videoTitle}_${videoYear}_${videoDoubanId}_${currentEpisodeIndex + 1}`;
@@ -1962,6 +1997,12 @@ function PlayPageClient() {
 
     if (!isEmbySource || !detail) {
       resetAudioTrackState();
+      // 离开 Emby 源时清理转码状态
+      if (isAudioTranscodingRef.current) {
+        isAudioTranscodingRef.current = false;
+        transcodeInfoRef.current = null;
+        setIsAudioTranscoding(false);
+      }
       return;
     }
 
@@ -1972,6 +2013,75 @@ function PlayPageClient() {
       audioStreams: (detail as any)?.private_audio_streams,
       currentEpisodeIndex,
     });
+
+    // ---------- VPS 音频转码决策 ----------
+    // 当影片没有任何一条浏览器可解码的音轨时（如只有 DTS-HD/TrueHD），
+    // 用 VPS 端 ffmpeg 把音频实时转成 AAC，返回转码 HLS 地址；否则返回 null。
+    const maybeBuildTranscodeUrl = (rawTracks: any[], itemId: string): string | null => {
+      if (!itemId) return null;
+      // 源配置显式关闭则不转码
+      if ((detail as any)?.vps_audio_transcode === false) return null;
+      if (!Array.isArray(rawTracks) || rawTracks.length === 0) return null;
+      const browser = detectBrowser();
+      const hasPlayable = rawTracks.some((t: any) => {
+        try {
+          return !!t?.codec && isCodecSupported(t.codec, browser);
+        } catch {
+          return false;
+        }
+      });
+      if (hasPlayable) return null;
+      // 选默认音轨（没有默认就取第一条）
+      const sorted = [...rawTracks].sort(
+        (a: any, b: any) => Number(a.index ?? 0) - Number(b.index ?? 0)
+      );
+      const defTrack =
+        sorted.find((t: any) => t.is_default ?? t.isDefault) || sorted[0];
+      const trackIndex = Number(defTrack?.index);
+      if (!Number.isFinite(trackIndex) || trackIndex < 0) return null;
+      const embyKey = detail.source?.startsWith('emby_')
+        ? detail.source.substring(5)
+        : undefined;
+      return buildEmbyTranscodeUrl(itemId, embyKey, Math.floor(trackIndex));
+    };
+
+    // 探测转码地址可用后切换播放（异步，不阻塞音轨 UI）
+    const switchToTranscode = (
+      transcodeUrl: string | null,
+      itemId: string,
+      embyKey?: string
+    ) => {
+      if (!transcodeUrl) {
+        if (isAudioTranscodingRef.current) {
+          console.log('🎵 本集无需转码，恢复直连');
+          isAudioTranscodingRef.current = false;
+          transcodeInfoRef.current = null;
+          setIsAudioTranscoding(false);
+        }
+        return;
+      }
+      // 避免重复探测同一地址
+      if (transcodeInfoRef.current?.url === transcodeUrl) return;
+      console.log('🎵 无浏览器可解码音轨，启动 VPS 音频转码:', transcodeUrl);
+      isAudioTranscodingRef.current = true;
+      transcodeInfoRef.current = { itemId, embyKey, url: transcodeUrl };
+      setIsAudioTranscoding(true);
+      probeTranscodePlaylist(transcodeUrl).then((ok) => {
+        // 换集后旧的探测结果直接丢弃
+        if (transcodeInfoRef.current?.url !== transcodeUrl) return;
+        if (ok) {
+          console.log('🎵 转码就绪，切换播放地址');
+          resumeTimeRef.current = artPlayerRef.current?.currentTime || 0;
+          setVideoUrl(transcodeUrl);
+        } else {
+          console.warn('🎵 转码启动失败，回退直连（可能无声）');
+          isAudioTranscodingRef.current = false;
+          transcodeInfoRef.current = null;
+          setIsAudioTranscoding(false);
+        }
+      });
+    };
+    // ---------- VPS 音频转码决策结束 ----------
 
     // 处理音轨数据的辅助函数
     const processAudioTracks = (rawTracks: any[]) => {
@@ -2069,6 +2179,13 @@ function PlayPageClient() {
           const rawTracks = data.audioStreams || [];
           console.log('🎵 剧集音轨数据:', rawTracks);
 
+          // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
+          switchToTranscode(
+            maybeBuildTranscodeUrl(rawTracks, episodeItemId),
+            episodeItemId,
+            embyKey
+          );
+
           if (rawTracks.length < 2) {
             console.log('🎵 音轨数量不足2条，不显示音轨按钮');
             resetAudioTrackState();
@@ -2089,6 +2206,17 @@ function PlayPageClient() {
     // 电影：直接使用 detail 中的音轨数据
     const rawTracks = (detail as any).private_audio_streams || [];
     console.log('🎵 电影音轨数据:', rawTracks);
+
+    // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
+    const movieItemId = (detail as any)?.id || '';
+    const movieEmbyKey = detail.source?.startsWith('emby_')
+      ? detail.source.substring(5)
+      : undefined;
+    switchToTranscode(
+      maybeBuildTranscodeUrl(rawTracks, movieItemId),
+      movieItemId,
+      movieEmbyKey
+    );
 
     if (rawTracks.length < 2) {
       console.log('🎵 音轨数量不足2条，不显示音轨按钮');
@@ -2129,6 +2257,24 @@ function PlayPageClient() {
     setCurrentAudioTrack(track.index);
     savePreferredAudioLang(track.language);
     setIsAudioTrackSwitching(true);
+
+    // 转码中切音轨：重建转码地址（新音轨序号），而不是改 AudioStreamIndex
+    const tcInfo = transcodeInfoRef.current;
+    if (isAudioTranscodingRef.current && tcInfo) {
+      const nextUrl = buildEmbyTranscodeUrl(tcInfo.itemId, tcInfo.embyKey, track.index);
+      console.log('🎵 转码中切换音轨，重建转码地址:', nextUrl);
+      probeTranscodePlaylist(nextUrl).then((ok) => {
+        if (transcodeInfoRef.current?.itemId !== tcInfo.itemId) return;
+        if (ok) {
+          transcodeInfoRef.current = { ...tcInfo, url: nextUrl };
+          setVideoUrl(nextUrl);
+        } else {
+          console.warn('🎵 转码（新音轨）启动失败，保持当前播放');
+        }
+        setIsAudioTrackSwitching(false);
+      });
+      return;
+    }
 
     // 直接修改URL参数，不需要重新请求API
     const nextUrl = appendAudioStreamIndex(videoUrl, track.index);
@@ -6278,7 +6424,24 @@ function PlayPageClient() {
 
   return (
     <>
-      <AudioCodecWarning tracks={audioTracks} />
+      {!isAudioTranscoding && <AudioCodecWarning tracks={audioTracks} />}
+      {isAudioTranscoding && (
+        <div
+          data-testid='audio-transcode-badge'
+          className='fixed top-3 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-2xl
+                     rounded-lg border border-sky-300 dark:border-sky-700
+                     bg-gradient-to-br from-sky-50 to-cyan-50 dark:from-sky-900/85 dark:to-cyan-900/85
+                     shadow-lg backdrop-blur-sm px-3 py-2 sm:px-4'
+        >
+          <div className='flex items-center gap-2 text-sky-900 dark:text-sky-100'>
+            <span aria-hidden='true' className='text-base leading-none'>🎵</span>
+            <p className='text-xs sm:text-sm leading-snug'>
+              音频转码中（DTS / TrueHD → AAC），视频原画直传
+              <span className='text-sky-600 dark:text-sky-300'> · 起播稍慢、支持拖动</span>
+            </p>
+          </div>
+        </div>
+      )}
       <PageLayout activePath='/play'>
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20 pb-40 md:pb-safe-bottom'>
         {/* 第一行：影片标题（小屏幕用，大屏幕在 PlayInfoPanel 里） */}
