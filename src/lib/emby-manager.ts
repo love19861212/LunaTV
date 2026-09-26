@@ -25,6 +25,7 @@ interface EmbySourceConfig {
   appendMediaSourceId?: boolean;
   transcodeMp4?: boolean;
   proxyPlay?: boolean; // 视频播放代理开关
+  vpsAudioTranscode?: boolean; // VPS 端 ffmpeg 音频转码（DTS/TrueHD → AAC），默认启用
   embyAuthorizationHeader?: string; // 自定义 X-Emby-Authorization 头
 }
 

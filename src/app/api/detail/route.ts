@@ -142,6 +142,8 @@ export async function GET(request: NextRequest) {
           episodes: [await client.getStreamUrl(item.Id, true, false, compatibleAudioIndex)],
           episodes_titles: [item.Name],
           proxyMode: false,
+          // VPS 音频转码开关（默认启用，源配置显式关闭才禁用）
+          vps_audio_transcode: (sourceConfig as any)?.vpsAudioTranscode !== false,
           // 添加音轨信息
           private_audio_streams: audioStreams.map(stream => ({
             index: stream.index,
@@ -203,6 +205,8 @@ export async function GET(request: NextRequest) {
             return `S${seasonNum.toString().padStart(2, '0')}E${episodeNum.toString().padStart(2, '0')}`;
           }),
           proxyMode: false,
+          // VPS 音频转码开关（默认启用，源配置显式关闭才禁用）
+          vps_audio_transcode: (sourceConfig as any)?.vpsAudioTranscode !== false,
           // 添加音轨信息（Series 级别的，仅供参考）
           private_audio_streams: audioStreams.map(stream => ({
             index: stream.index,
