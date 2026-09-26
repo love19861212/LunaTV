@@ -220,13 +220,14 @@ function buildEmbyTranscodeUrl(
   return `/api/emby/transcode/proxy/playlist.m3u8?${q.toString()}`;
 }
 
-/** 探测转码 playlist 是否真实可用（防止播放器吃到错误 JSON） */
+/** 探测转码 playlist 是否真实可用（防止播放器吃到错误 JSON 或空列表） */
 async function probeTranscodePlaylist(url: string): Promise<boolean> {
   try {
     const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) return false;
-    const text = (await resp.text()).slice(0, 200);
-    return text.includes('#EXTM3U');
+    const text = (await resp.text()).slice(0, 2000);
+    // 必须包含 #EXTM3U 且至少有一个分片（#EXTINF），空 playlist 会导致 hls.js manifest 失败
+    return text.includes('#EXTM3U') && text.includes('#EXTINF');
   } catch {
     return false;
   }

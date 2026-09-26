@@ -65,7 +65,7 @@ const IDLE_TIMEOUT_MS = Number(process.env.EMBY_TRANSCODE_IDLE_MS || 20 * 60 * 1
 const MIN_FREE_BYTES = Number(
   process.env.EMBY_TRANSCODE_MIN_FREE || 10 * 1024 * 1024 * 1024
 );
-const START_TIMEOUT_MS = 25 * 1000;
+const START_TIMEOUT_MS = 60 * 1000;
 
 let ffmpegChecked: boolean | null = null;
 let transcodeBaseDir: string | null = null;
@@ -254,6 +254,16 @@ async function probeUpstream(inputUrl: string): Promise<string> {
  * 获取或创建转码会话。成功返回会话（含分片目录）；
  * 失败抛 TranscodeError。
  */
+/** playlist 是否已包含至少一个分片（仅文件存在不够，ffmpeg 启动瞬间会创建空文件） */
+function playlistHasSegments(playlistPath: string): boolean {
+  try {
+    const text = fs.readFileSync(playlistPath, 'utf8');
+    return text.includes('#EXTINF');
+  } catch {
+    return false;
+  }
+}
+
 export async function getOrStartSession(
   opts: StartSessionOptions
 ): Promise<TranscodeSession> {
@@ -261,18 +271,21 @@ export async function getOrStartSession(
     throw new TranscodeError('NO_FFMPEG', '服务器未安装 ffmpeg，无法进行音频转码');
   }
 
+  // inputUrl 去首尾空白：Emby 返回的直链偶发带空格，fetch/ffmpeg 会直接失败
+  opts = { ...opts, inputUrl: opts.inputUrl.trim() };
+
   const key = buildSessionKey(opts.embyKey, opts.itemId, opts.audioPos);
   const existing = sessions.get(key);
   if (existing) {
-    const playlistExists =
+    const playlistReady =
       !existing.failed &&
-      fs.existsSync(path.join(existing.dir, 'playlist.m3u8'));
-    if (playlistExists) {
+      playlistHasSegments(path.join(existing.dir, 'playlist.m3u8'));
+    if (playlistReady) {
       // 复用：ffmpeg 运行中，或已转码完成（playlist 完整可继续服务）
       existing.lastAccess = Date.now();
       return existing;
     }
-    // 已失败/无 playlist 的会话先清理再重建
+    // 已失败/无可用分片的会话先清理再重建
     destroySession(key, '重建');
   }
 
@@ -408,7 +421,7 @@ export async function getOrStartSession(
         }
       });
       incoming.on('error', () => {
-        if (!session.failed && !fs.existsSync(playlistPath)) {
+        if (!session.failed && !playlistHasSegments(playlistPath)) {
           session.failed = true;
           session.failReason = '上游连接中断';
         }
@@ -420,7 +433,7 @@ export async function getOrStartSession(
       incoming.pipe(proc.stdin as NodeJS.WritableStream);
     });
     upstreamReq.on('error', (err) => {
-      if (!session.failed && !fs.existsSync(playlistPath)) {
+      if (!session.failed && !playlistHasSegments(playlistPath)) {
         session.failed = true;
         session.failReason = `上游连接失败：${err.message}`;
       }
@@ -474,7 +487,7 @@ export async function getOrStartSession(
     session.failReason = err.message;
   });
 
-  // 等待 playlist 生成（ffmpeg 探测 + 首个分片）
+  // 等待 playlist 生成首个分片（ffmpeg 启动瞬间会创建空文件，仅存在不够）
   const start = Date.now();
   while (Date.now() - start < START_TIMEOUT_MS) {
     if (session.failed) {
@@ -484,7 +497,7 @@ export async function getOrStartSession(
         `转码启动失败：${session.failReason || '未知错误'}`
       );
     }
-    if (fs.existsSync(playlistPath)) {
+    if (playlistHasSegments(playlistPath)) {
       return session;
     }
     await new Promise((r) => setTimeout(r, 300));
