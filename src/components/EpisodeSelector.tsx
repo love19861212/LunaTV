@@ -607,16 +607,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {/* 手动测速面板 */}
           <div className='mb-4 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-200 dark:border-blue-700'>
             <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2'>
-                <Gauge className='w-5 h-5 text-blue-600 dark:text-blue-400' />
-                <span className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              <div className='flex items-center gap-2 flex-shrink-0'>
+                <Gauge className='w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0' />
+                <span className='text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap'>
                   视频源测速
                 </span>
               </div>
               <button
                 onClick={handleManualSpeedTest}
                 disabled={manualTesting || availableSources.length === 0}
-                className='flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed'
+                className='flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed flex-shrink-0 whitespace-nowrap'
               >
                 <RefreshCw className={`w-4 h-4 ${manualTesting ? 'animate-spin' : ''}`} />
                 {manualTesting ? '测速中...' : '手动测速'}
