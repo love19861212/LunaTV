@@ -39,6 +39,12 @@ export async function GET(request: NextRequest) {
     const audioStreams = await client.getAudioStreams(itemId);
     console.log('========== [/api/emby/audio-streams] 获取到音轨数据:', audioStreams);
 
+    // 获取容器格式
+    let mediaContainer: string | null = null;
+    try {
+      mediaContainer = await (client as any).getMediaContainer?.(itemId) ?? null;
+    } catch { /* 忽略 */ }
+
     // 返回音轨数据
     return NextResponse.json({
       audioStreams: audioStreams.map(stream => ({
@@ -48,6 +54,7 @@ export async function GET(request: NextRequest) {
         codec: stream.codec,
         is_default: stream.isDefault,
       })),
+      container: mediaContainer,
     });
   } catch (error) {
     console.error('========== [/api/emby/audio-streams] 获取音轨失败:', error);

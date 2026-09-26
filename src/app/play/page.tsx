@@ -2018,7 +2018,7 @@ function PlayPageClient() {
     // ---------- VPS 音频转码决策 ----------
     // 当影片没有任何一条浏览器可解码的音轨时（如只有 DTS-HD/TrueHD），
     // 用 VPS 端 ffmpeg 把音频实时转成 AAC，返回转码 HLS 地址；否则返回 null。
-    const maybeBuildTranscodeUrl = (rawTracks: any[], itemId: string): string | null => {
+    const maybeBuildTranscodeUrl = (rawTracks: any[], itemId: string, containerOverride?: string | null): string | null => {
       if (!itemId) return null;
       // 源配置显式关闭则不转码
       if ((detail as any)?.vps_audio_transcode === false) return null;
@@ -2031,7 +2031,13 @@ function PlayPageClient() {
           return false;
         }
       });
-      if (hasPlayable) return null;
+      // 容器格式检查：mkv/avi 等浏览器无法直接播放，即使音频兼容也需转码（VPS 输出 HLS）
+      const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
+      const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
+      if (hasPlayable && !containerIncompatible) return null;
+      if (containerIncompatible) {
+        console.log('🎵 容器格式不兼容浏览器 (' + container + ')，启动 VPS 转码输出 HLS');
+      }
       // 选默认音轨（没有默认就取第一条）
       const sorted = [...rawTracks].sort(
         (a: any, b: any) => Number(a.index ?? 0) - Number(b.index ?? 0)
@@ -2182,7 +2188,7 @@ function PlayPageClient() {
 
           // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
           switchToTranscode(
-            maybeBuildTranscodeUrl(rawTracks, episodeItemId),
+            maybeBuildTranscodeUrl(rawTracks, episodeItemId, data.container ?? null),
             episodeItemId,
             embyKey
           );

@@ -642,6 +642,32 @@ export class EmbyClient {
     }
   }
 
+  /** 获取媒体容器格式（如 mkv/mp4），用于判断浏览器是否可直接播放 */
+  async getMediaContainer(itemId: string): Promise<string | null> {
+    await this.ensureAuthenticated();
+    if (!this.userId) return null;
+    const token = this.apiKey || this.authToken;
+    try {
+      const url = `${this.serverUrl}/Items/${itemId}/PlaybackInfo?UserId=${this.userId}${token ? `&api_key=${token}` : ''}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          UserId: this.userId,
+          StartTimeTicks: 0,
+          IsPlayback: false,
+          AutoOpenLiveStream: true,
+        }),
+      });
+      if (!response.ok) return null;
+      const data: any = await response.json();
+      const container = data.MediaSources?.[0]?.Container;
+      return typeof container === 'string' && container ? container.toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }
+
   async getStreamUrl(itemId: string, direct = true, forceDirectUrl = false, audioStreamIndex?: number): Promise<string> {
     await this.ensureAuthenticated();
     const token = this.apiKey || this.authToken;

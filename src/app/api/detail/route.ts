@@ -98,10 +98,15 @@ export async function GET(request: NextRequest) {
 
       // 获取音轨信息（不影响主流程）
       let audioStreams: any[] = [];
+      let mediaContainer: string | null = null;
       try {
         console.log('========== [/api/detail] 开始获取音轨，itemId:', id);
         audioStreams = await client.getAudioStreams(id);
         console.log('========== [/api/detail] 获取到音轨数据:', audioStreams);
+        // 同时获取容器格式（mkv 等浏览器无法直接播放）
+        try {
+          mediaContainer = await (client as any).getMediaContainer?.(id) ?? null;
+        } catch { /* 忽略，不影响播放 */ }
       } catch (error) {
         console.error('========== [/api/detail] 获取音轨失败（不影响播放）:', error);
       }
@@ -152,6 +157,8 @@ export async function GET(request: NextRequest) {
             codec: stream.codec,
             is_default: stream.isDefault,
           })),
+          // 容器格式（mkv/avi 等浏览器无法直接播放，需 VPS 转码）
+          private_container: mediaContainer,
         };
       } else if (item.Type === 'Series') {
         // 剧集 - 获取所有季和集
