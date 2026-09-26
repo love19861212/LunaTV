@@ -644,6 +644,14 @@ export class EmbyClient {
 
   /** 获取媒体容器格式（如 mkv/mp4），用于判断浏览器是否可直接播放 */
   async getMediaContainer(itemId: string): Promise<string | null> {
+    const info = await this.getVideoInfo(itemId);
+    return info?.container ?? null;
+  }
+
+  /** 获取视频规格信息（容器/视频编码/码率），用于前端判断是否超出播放能力 */
+  async getVideoInfo(
+    itemId: string
+  ): Promise<{ container: string | null; videoCodec: string | null; videoProfile: string | null; bitrate: number | null } | null> {
     await this.ensureAuthenticated();
     if (!this.userId) return null;
     const token = this.apiKey || this.authToken;
@@ -661,8 +669,14 @@ export class EmbyClient {
       });
       if (!response.ok) return null;
       const data: any = await response.json();
-      const container = data.MediaSources?.[0]?.Container;
-      return typeof container === 'string' && container ? container.toLowerCase() : null;
+      const ms = data.MediaSources?.[0];
+      if (!ms) return null;
+      const container = typeof ms.Container === 'string' && ms.Container ? ms.Container.toLowerCase() : null;
+      const vStream = (ms.MediaStreams || []).find((s: any) => String(s.Type || '').toLowerCase() === 'video');
+      const videoCodec = vStream?.Codec ? String(vStream.Codec).toLowerCase() : null;
+      const videoProfile = vStream?.Profile ? String(vStream.Profile) : null;
+      const bitrate = typeof ms.Bitrate === 'number' && ms.Bitrate > 0 ? ms.Bitrate : null;
+      return { container, videoCodec, videoProfile, bitrate };
     } catch {
       return null;
     }
