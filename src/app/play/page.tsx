@@ -6280,7 +6280,12 @@ function PlayPageClient() {
       console.error('创建播放器失败:', err);
       // 重置集数切换标识
       isEpisodeChangingRef.current = false;
-      setError('播放器初始化失败');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // 显示具体错误原因，方便定位（转码地址只显示路径，不含参数）
+      const safeUrl = videoUrl
+        ? String(videoUrl).split('?')[0].slice(0, 80)
+        : '无地址';
+      setError(`播放器初始化失败: ${errMsg.slice(0, 120)} [${safeUrl}]`);
     }
     }; // 结束 initPlayer 函数
 
