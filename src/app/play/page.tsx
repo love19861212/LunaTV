@@ -4446,6 +4446,20 @@ function PlayPageClient() {
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
+        // 代理包装后的 URL 不带 .m3u8 后缀，ArtPlayer 自动类型检测会失效，
+        // 导致 customType.m3u8（含伪装分片修复）被跳过。这里用原始 URL 明确指定类型。
+        type: (() => {
+          try {
+            const raw = stripVideoPlayProxy(videoUrl) || videoUrl || '';
+            if (/\.m3u8(\?|#|$)/i.test(raw)) return 'm3u8';
+            if (/\.mp4(\?|#|$)/i.test(raw)) return 'mp4';
+            if (/\.webm(\?|#|$)/i.test(raw)) return 'webm';
+            if (/\.mov(\?|#|$)/i.test(raw)) return 'mov';
+            if (/\.mkv(\?|#|$)/i.test(raw)) return 'mkv';
+            if (/\.flv(\?|#|$)/i.test(raw)) return 'flv';
+          } catch { /* ignore */ }
+          return undefined;
+        })(),
         poster: videoCover,
         volume: 0.7,
         isLive: false,
