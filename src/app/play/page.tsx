@@ -2796,10 +2796,8 @@ function PlayPageClient() {
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
-      console.log('[DEBUG] CustomHlsJsLoader instantiated');
       const load = this.load.bind(this);
       this.load = function (context: any, config: any, callbacks: any) {
-        console.log('[DEBUG] CustomHlsJsLoader.load, type=', (context as any)?.type);
         // 拦截manifest和level请求
         if (
           (context as any).type === 'manifest' ||
@@ -2825,7 +2823,9 @@ function PlayPageClient() {
         // 拦截分片请求：处理伪装成 JPEG 的非标准分片
         // （部分源如爱奇艺、百度云zy、黑料资源的分片为"假 JPEG 头 + 标准 TS"，
         //  hls.js 从第0字节找同步头被干扰，需剥头后交回正常流程）
-        if ((context as any).type === 'fragment') {
+        //  兼容 hls.js 不同版本的 type 命名：'fragment' 或 'media-fragment'
+        const _fragType = (context as any).type;
+        if (_fragType === 'fragment' || _fragType === 'media-fragment') {
           const onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (
             response: any,
@@ -4497,7 +4497,6 @@ function PlayPageClient() {
         // HLS 支持配置
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
-            console.log('[DEBUG] customType.m3u8 called, url=', url?.slice?.(0, 100));
             if (!Hls) {
               console.error('HLS.js 未加载');
               return;
