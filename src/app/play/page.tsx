@@ -2015,6 +2015,29 @@ function PlayPageClient() {
       currentEpisodeIndex,
     });
 
+    // ---------- 播放能力检测 ----------
+    // 某些高规格片源（如 HEVC 10-bit、超高码率）超出浏览器解码能力或 VPS 带宽，
+    // 直接提示用户，避免无限转圈。返回提示文案，无问题返回 null。
+    const checkUnplayableReason = (videoInfoOverride?: any): string | null => {
+      const vi = videoInfoOverride ?? (detail as any)?.private_video_info;
+      if (!vi) return null;
+      const codec = String(vi.videoCodec || '').toLowerCase();
+      const profile = String(vi.videoProfile || '');
+      const bitrateMbps = typeof vi.bitrate === 'number' && vi.bitrate > 0
+        ? Math.round(vi.bitrate / 100000) / 10
+        : null;
+      const isHevc10Bit = (codec === 'hevc' || codec === 'h265') && /10/i.test(profile);
+      // HEVC 10-bit：绝大多数浏览器无法解码，VPS 实时转视频也不现实
+      if (isHevc10Bit) {
+        return `此片为 HEVC 10-bit${bitrateMbps ? `（${bitrateMbps} Mbps）` : ''}，浏览器无法解码，VPS 也转不动，建议用 KODI 或 Emby 客户端观看`;
+      }
+      // 超高码率：VPS 30Mbps 带宽顶不住，转码分发会卡死
+      if (bitrateMbps !== null && bitrateMbps >= 25) {
+        return `此片码率高达 ${bitrateMbps} Mbps，超出 VPS 带宽上限，网页无法流畅播放，建议用 KODI 或 Emby 客户端观看`;
+      }
+      return null;
+    };
+
     // ---------- VPS 音频转码决策 ----------
     // 当影片没有任何一条浏览器可解码的音轨时（如只有 DTS-HD/TrueHD），
     // 用 VPS 端 ffmpeg 把音频实时转成 AAC，返回转码 HLS 地址；否则返回 null。
@@ -2186,6 +2209,14 @@ function PlayPageClient() {
           const rawTracks = data.audioStreams || [];
           console.log('🎵 剧集音轨数据:', rawTracks);
 
+          // 高规格片源检测：超出播放能力直接提示
+          const epUnplayable = checkUnplayableReason(data.videoInfo ?? null);
+          if (epUnplayable) {
+            console.warn('🚫 剧集超出播放能力:', epUnplayable);
+            setError(epUnplayable);
+            return;
+          }
+
           // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
           switchToTranscode(
             maybeBuildTranscodeUrl(rawTracks, episodeItemId, data.container ?? null),
@@ -2213,6 +2244,14 @@ function PlayPageClient() {
     // 电影：直接使用 detail 中的音轨数据
     const rawTracks = (detail as any).private_audio_streams || [];
     console.log('🎵 电影音轨数据:', rawTracks);
+
+    // 高规格片源检测：超出播放能力直接提示，不浪费时间转圈
+    const unplayableReason = checkUnplayableReason();
+    if (unplayableReason) {
+      console.warn('🚫 片源超出播放能力:', unplayableReason);
+      setError(unplayableReason);
+      return;
+    }
 
     // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
     const movieItemId = (detail as any)?.id || '';

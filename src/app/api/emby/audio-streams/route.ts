@@ -39,10 +39,17 @@ export async function GET(request: NextRequest) {
     const audioStreams = await client.getAudioStreams(itemId);
     console.log('========== [/api/emby/audio-streams] 获取到音轨数据:', audioStreams);
 
-    // 获取容器格式
+    // 获取容器格式与视频规格
     let mediaContainer: string | null = null;
+    let videoInfo: { videoCodec: string | null; videoProfile: string | null; bitrate: number | null } | null = null;
     try {
-      mediaContainer = await (client as any).getMediaContainer?.(itemId) ?? null;
+      const vi = await (client as any).getVideoInfo?.(itemId);
+      if (vi) {
+        mediaContainer = vi.container ?? null;
+        videoInfo = { videoCodec: vi.videoCodec ?? null, videoProfile: vi.videoProfile ?? null, bitrate: vi.bitrate ?? null };
+      } else {
+        mediaContainer = await (client as any).getMediaContainer?.(itemId) ?? null;
+      }
     } catch { /* 忽略 */ }
 
     // 返回音轨数据
@@ -55,6 +62,7 @@ export async function GET(request: NextRequest) {
         is_default: stream.isDefault,
       })),
       container: mediaContainer,
+      videoInfo,
     });
   } catch (error) {
     console.error('========== [/api/emby/audio-streams] 获取音轨失败:', error);
