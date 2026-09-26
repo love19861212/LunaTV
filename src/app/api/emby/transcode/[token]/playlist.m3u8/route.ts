@@ -46,6 +46,8 @@ function errorStatus(code: TranscodeError['code']): number {
       return 429;
     case 'NO_DISK':
       return 507;
+    case 'UPSTREAM':
+      return 502;
     default:
       return 500;
   }
