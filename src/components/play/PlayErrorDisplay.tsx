@@ -2,9 +2,15 @@
 
 import { useRouter } from 'next/navigation';
 
+import IPlayButton from './IPlayButton';
+
 interface PlayErrorDisplayProps {
   error: string;
   videoTitle?: string;
+  /** iPlay 按钮用的播放地址（Emby 源才传） */
+  videoUrl?: string;
+  /** 是否为 Emby 源 */
+  isEmbySource?: boolean;
 }
 
 /** iPlay 官网（本地安装地址） */
@@ -31,7 +37,7 @@ function renderErrorWithIPlayLink(error: string) {
   );
 }
 
-export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplayProps) {
+export default function PlayErrorDisplay({ error, videoTitle, videoUrl, isEmbySource }: PlayErrorDisplayProps) {
   const router = useRouter();
 
   return (
@@ -76,6 +82,9 @@ export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplay
 
         {/* 操作按钮 */}
         <div className='space-y-3'>
+          {!!isEmbySource && !!videoUrl && (
+            <IPlayButton videoUrl={videoUrl} isEmbySource={true} variant='error' />
+          )}
           <button
             onClick={() =>
               videoTitle
