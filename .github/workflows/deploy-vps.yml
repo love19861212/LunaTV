@@ -15,6 +15,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      IPLAY_TOKEN_SECRET: ${{ secrets.IPLAY_TOKEN_SECRET }}
     steps:
       - name: Deploy via SSH (preflight → candidate → swap → rollback)
         uses: appleboy/ssh-action@v1.2.0
