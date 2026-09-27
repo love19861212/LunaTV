@@ -220,6 +220,8 @@ export interface StartSessionOptions {
   audioPos: number;
   /** Emby 直链（ffmpeg 直接拉流） */
   inputUrl: string;
+  /** 备用上游（直连失败时尝试，如 CF Worker 中转地址） */
+  fallbackUrl?: string;
 }
 
 /** 上游预检：Range 取首字节验证可达，返回跟随跳转后的最终 URL */
@@ -315,11 +317,23 @@ export async function getOrStartSession(
   try {
     finalUrl = await probeUpstream(opts.inputUrl);
   } catch (e) {
-    if (e instanceof TranscodeError) throw e;
-    throw new TranscodeError(
-      'UPSTREAM',
-      `上游探测异常：${(e as Error).message}`
-    );
+    // 直连失败时尝试备用上游（如 CF Worker 中转）
+    if (opts.fallbackUrl && opts.fallbackUrl !== opts.inputUrl) {
+      console.warn('[EmbyTranscode] 直连上游失败，尝试备用上游:', (e as Error).message);
+      try {
+        finalUrl = await probeUpstream(opts.fallbackUrl);
+        console.log('[EmbyTranscode] 备用上游可用');
+      } catch (e2) {
+        if (e2 instanceof TranscodeError) throw e2;
+        throw new TranscodeError('UPSTREAM', `上游探测异常（直连与备用均失败）: ${(e2 as Error).message}`);
+      }
+    } else {
+      if (e instanceof TranscodeError) throw e;
+      throw new TranscodeError(
+        'UPSTREAM',
+        `上游探测异常：${(e as Error).message}`
+      );
+    }
   }
 
   const client = finalUrl.startsWith('https:') ? https : http;
@@ -476,7 +490,10 @@ export async function getOrStartSession(
     stopUpstream();
     if (!playlistExists) {
       session.failed = true;
-      session.failReason = stderrTail || `ffmpeg 异常退出 (code=${code})`;
+      // 保留已有的具体失败原因（如"上游取流失败"），不要被通用的 ffmpeg 退出信息覆盖
+      if (!session.failReason) {
+        session.failReason = stderrTail || `ffmpeg 异常退出 (code=${code})`;
+      }
     }
     // 即使正常结束也刷新 lastAccess，让空闲回收接管
     session.lastAccess = Date.now();
