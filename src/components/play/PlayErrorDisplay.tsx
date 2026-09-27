@@ -5,44 +5,10 @@ import { useRouter } from 'next/navigation';
 interface PlayErrorDisplayProps {
   error: string;
   videoTitle?: string;
-  /** iPlay 跳转用的播放地址（Emby 源才传） */
-  iplayVideoUrl?: string;
-  /** 是否为 Emby 源 */
-  isEmbySource?: boolean;
 }
 
-/** 与 IPlayButton 同逻辑：拼出 iplay:// 深链（Worker 包裹地址先解出源站直链） */
-function unwrapWorkerUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    const inner = u.searchParams.get('url');
-    if (inner && /mootvapidl\.54321\.asia/i.test(u.hostname)) {
-      return inner;
-    }
-  } catch {
-    // 解析失败就原样返回
-  }
-  return url;
-}
-
-function buildIPlayLink(videoUrl: string): string {
-  let absolute = unwrapWorkerUrl((videoUrl || '').trim());
-  if (!absolute) return '';
-  if (absolute.startsWith('/') && typeof window !== 'undefined') {
-    absolute = window.location.origin + absolute;
-  }
-  try {
-    const b64 = btoa(unescape(encodeURIComponent(absolute)));
-    // 注意：不要对 b64 做 encodeURIComponent，iPlay 桌面版不做 URL 解码直接 Base64 解码
-    return `iplay://play/any?type=url&url=${b64}`;
-  } catch {
-    return '';
-  }
-}
-
-export default function PlayErrorDisplay({ error, videoTitle, iplayVideoUrl, isEmbySource }: PlayErrorDisplayProps) {
+export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplayProps) {
   const router = useRouter();
-  const showIPlay = !!isEmbySource && !!iplayVideoUrl;
 
   return (
     <div className='flex items-center justify-center min-h-screen bg-transparent'>
@@ -86,17 +52,6 @@ export default function PlayErrorDisplay({ error, videoTitle, iplayVideoUrl, isE
 
         {/* 操作按钮 */}
         <div className='space-y-3'>
-          {showIPlay && (
-            <button
-              onClick={() => {
-                const link = buildIPlayLink(iplayVideoUrl!);
-                if (link) window.location.href = link;
-              }}
-              className='w-full px-6 py-3 bg-linear-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-600 hover:to-indigo-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
-            >
-              ▶️ 用 iPlay 播放
-            </button>
-          )}
           <button
             onClick={() =>
               videoTitle
