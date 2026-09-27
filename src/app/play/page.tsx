@@ -2028,12 +2028,12 @@ function PlayPageClient() {
       const isHevc10Bit = (codec === 'hevc' || codec === 'h265') && /10/i.test(profile);
       // HEVC 10-bit：绝大多数浏览器无法解码，VPS 实时转视频也不现实
       if (isHevc10Bit) {
-        return `此片为 HEVC 10-bit${bitrateMbps ? `（${bitrateMbps} Mbps）` : ''}，浏览器无法解码，VPS 也转不动，建议点下方「返回搜索」试试订阅源，或用 KODI / Emby 客户端观看`;
+        return `此片为 HEVC 10-bit${bitrateMbps ? `（${bitrateMbps} Mbps）` : ''}，浏览器无法解码，VPS 也转不动，建议点下方「返回搜索」试试订阅源，或安装 iPlay 本地播放`;
       }
       // 超高码率：VPS 30Mbps 带宽顶不住，转码分发会卡死
       // 阈值 20Mbps：VPS 需同时下载源流+上传 HLS（2x 码率），20Mbps 源需 40Mbps 带宽已超限
       if (bitrateMbps !== null && bitrateMbps >= 20) {
-        return `此片码率高达 ${bitrateMbps} Mbps，超出 VPS 转码带宽上限，网页无法流畅播放，建议点下方「返回搜索」试试订阅源，或用 KODI / Emby 客户端观看`;
+        return `此片码率高达 ${bitrateMbps} Mbps，超出 VPS 转码带宽上限，网页无法流畅播放，建议点下方「返回搜索」试试订阅源，或安装 iPlay 本地播放`;
       }
       return null;
     };
@@ -2097,7 +2097,7 @@ function PlayPageClient() {
       return buildEmbyTranscodeUrl(itemId, embyKey, Math.floor(trackIndex));
     };
 
-    // 音频不兼容且无法转码时，返回"无法播放"原因（统一进 KODI 提示页）
+    // 音频不兼容且无法转码时，返回"无法播放"原因（统一进错误提示页）
     // 返回 null 表示：音频可直接播放，或可以走 VPS 转码（无需阻断）
     const getAudioUnplayableReason = (rawTracks: any[], itemId: string, containerOverride?: string | null): string | null => {
       if (!itemId) return null;
@@ -2131,7 +2131,7 @@ function PlayPageClient() {
         if (codecs && !hasPlayable) parts.push(`音频 ${codecs}`);
         if (containerIncompatible) parts.push(`${container.toUpperCase()} 容器`);
         const desc = parts.length > 0 ? parts.join('、') : '此片格式';
-        return `${desc}浏览器无法直接播放，且当前源未开启 VPS 转码，建议点下方「返回搜索」试试订阅源，或用 KODI / Emby 客户端观看`;
+        return `${desc}浏览器无法直接播放，且当前源未开启 VPS 转码，建议点下方「返回搜索」试试订阅源，或安装 iPlay 本地播放`;
       }
       return null;
     };
@@ -2169,7 +2169,7 @@ function PlayPageClient() {
           isAudioTranscodingRef.current = false;
           transcodeInfoRef.current = null;
           setIsAudioTranscoding(false);
-          setError('VPS 音频转码启动失败，此片音频浏览器无法直接解码，建议点下方「返回搜索」试试订阅源，或用 KODI / Emby 客户端观看');
+          setError('VPS 音频转码启动失败，此片音频浏览器无法直接解码，建议点下方「返回搜索」试试订阅源，或安装 iPlay 本地播放');
         }
       });
     };

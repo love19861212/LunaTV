@@ -7,6 +7,30 @@ interface PlayErrorDisplayProps {
   videoTitle?: string;
 }
 
+/** iPlay 官网（本地安装地址） */
+const IPLAY_SITE = 'https://iplay.saltpi.cn/';
+
+/** 把错误文案里的 iPlay 渲染成可点击的官网链接 */
+function renderErrorWithIPlayLink(error: string) {
+  const keyword = 'iPlay';
+  const idx = error.indexOf(keyword);
+  if (idx === -1) return error;
+  return (
+    <>
+      {error.slice(0, idx)}
+      <a
+        href={IPLAY_SITE}
+        target='_blank'
+        rel='noopener noreferrer'
+        className='underline underline-offset-2 font-semibold hover:text-red-500 dark:hover:text-red-300'
+      >
+        {keyword}
+      </a>
+      {error.slice(idx + keyword.length)}
+    </>
+  );
+}
+
 export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplayProps) {
   const router = useRouter();
 
@@ -42,7 +66,7 @@ export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplay
           </h2>
           <div className='bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4'>
             <p className='text-red-600 dark:text-red-400 font-medium'>
-              {error}
+              {renderErrorWithIPlayLink(error)}
             </p>
           </div>
           <p className='text-sm text-gray-500 dark:text-gray-400'>
