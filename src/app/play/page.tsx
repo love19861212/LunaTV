@@ -32,6 +32,7 @@ import CommentSection from '@/components/play/CommentSection';
 import DownloadButtons from '@/components/play/DownloadButtons';
 import FavoriteButton from '@/components/play/FavoriteButton';
 import NetDiskButton from '@/components/play/NetDiskButton';
+import IPlayButton from '@/components/play/IPlayButton';
 import CollapseButton from '@/components/play/CollapseButton';
 import { detectBrowser, isCodecSupported } from '@/lib/audio-codec-compat';
 import BackToTopButton from '@/components/play/BackToTopButton';
@@ -6600,6 +6601,8 @@ function PlayPageClient() {
         <PlayErrorDisplay
           error={error}
           videoTitle={videoTitle}
+          videoUrl={videoUrl || detail?.episodes?.[currentEpisodeIndex] || detail?.episodes?.[0] || ''}
+          isEmbySource={detail?.source === 'emby' || !!detail?.source?.startsWith('emby_')}
         />
       </PageLayout>
     );
@@ -6649,6 +6652,12 @@ function PlayPageClient() {
               netdiskResults={netdiskResults}
               onSearch={handleNetDiskSearch}
               onOpenModal={() => setShowNetdiskModal(true)}
+            />
+
+            {/* iPlay 跳转按钮 - 仅 Emby 源显示，一次性令牌深链唤起本地 iPlay */}
+            <IPlayButton
+              videoUrl={videoUrl}
+              isEmbySource={detail?.source === 'emby' || !!detail?.source?.startsWith('emby_')}
             />
 
             {/* 下载按钮 - 使用独立组件优化性能 */}
