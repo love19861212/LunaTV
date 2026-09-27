@@ -88,7 +88,10 @@ export default function IPlayButton({ videoUrl, isEmbySource, variant = 'toolbar
       if (!playUrl) throw new Error(data?.error || '令牌签发失败');
       // 注意：不要对 base64 做 encodeURIComponent，iPlay 桌面版不做 URL 解码直接 Base64 解码
       const b64 = btoa(unescape(encodeURIComponent(playUrl)));
-      window.location.href = `iplay://play/any?type=url&url=${b64}`;
+      // Windows 桌面版只认 source 参数里的 JSON（{"video":"..."}），不认 type=url&url；
+      // 安卓版认 type=url&url。两个都带上，双端兼容。
+      const sourceJson = encodeURIComponent(JSON.stringify({ video: playUrl }));
+      window.location.href = `iplay://play/any?type=url&url=${b64}&source=${sourceJson}`;
     } catch (e) {
       alert(`唤起 iPlay 失败：${(e as Error).message}`);
     } finally {
