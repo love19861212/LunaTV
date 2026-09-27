@@ -725,7 +725,7 @@ export class EmbyClient {
     // Worker 侧 decodeURIComponent 还原，Range 等头透传，支持拖动
     const wrapWorker = (directUrl: string): string => {
       if (this.workerProxyPlay && this.workerProxyUrl && !forceDirectUrl) {
-        return `${this.workerProxyUrl}/${encodeURIComponent(directUrl)}`;
+        return `${this.workerProxyUrl.trim().replace(/\/+$/, '')}/?url=${encodeURIComponent(directUrl)}`;
       }
       return directUrl;
     };
