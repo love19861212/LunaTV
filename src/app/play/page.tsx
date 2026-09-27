@@ -2039,15 +2039,17 @@ function PlayPageClient() {
     };
 
     // ---------- VPS 音频转码决策 ----------
-    // 当影片没有任何一条浏览器可解码的音轨时（如只有 DTS-HD/TrueHD），
+    // 当影片没有任何一条浏览器可解码的音轨时（如只有 DTS-HD/TrueHD/EAC3），
     // 用 VPS 端 ffmpeg 把音频实时转成 AAC，返回转码 HLS 地址；否则返回 null。
+    // 注意：若音轨元数据加载失败（rawTracks 为空），为保守起见默认走转码，
+    // 避免用户遇到"有画面没声音"却无提示的情况。
     const maybeBuildTranscodeUrl = (rawTracks: any[], itemId: string, containerOverride?: string | null): string | null => {
       if (!itemId) return null;
       // 源配置显式关闭则不转码
       if ((detail as any)?.vps_audio_transcode === false) return null;
-      if (!Array.isArray(rawTracks) || rawTracks.length === 0) return null;
+      const tracksEmpty = !Array.isArray(rawTracks) || rawTracks.length === 0;
       const browser = detectBrowser();
-      const hasPlayable = rawTracks.some((t: any) => {
+      const hasPlayable = !tracksEmpty && rawTracks.some((t: any) => {
         try {
           return !!t?.codec && isCodecSupported(t.codec, browser);
         } catch {
@@ -2057,6 +2059,14 @@ function PlayPageClient() {
       // 容器格式检查：mkv/avi 等浏览器无法直接播放，即使音频兼容也需转码（VPS 输出 HLS）
       const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
       const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
+      // 元数据缺失时默认转码（保守策略：有声音比省资源重要）
+      if (tracksEmpty && !container) {
+        console.warn('⚠️ 音轨与容器信息均缺失，默认走 VPS 转码以避免无声播放');
+        const embyKey = detail.source?.startsWith('emby_')
+          ? detail.source.substring(5)
+          : undefined;
+        return buildEmbyTranscodeUrl(itemId, embyKey, 0);
+      }
       if (hasPlayable && !containerIncompatible) return null;
       if (containerIncompatible) {
         console.log('🎵 容器格式不兼容浏览器 (' + container + ')，启动 VPS 转码输出 HLS');
