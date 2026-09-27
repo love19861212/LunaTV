@@ -60,7 +60,7 @@ export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplay
             }
             className='w-full px-6 py-3 bg-linear-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
           >
-            {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
+            {videoTitle ? '🔍 试试订阅源搜索' : '← 返回上页'}
           </button>
 
           <button
