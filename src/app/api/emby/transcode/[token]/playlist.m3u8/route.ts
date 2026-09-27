@@ -107,6 +107,25 @@ export async function GET(
         : undefined
     );
 
+    // Worker 中转地址作为备用上游（VPS 直连 Emby 失败时用）
+    // forceDirectUrl=false 让 getStreamUrl 按源配置返回 Worker 包裹地址
+    let workerFallbackUrl: string | undefined;
+    try {
+      const workerUrl = await client.getStreamUrl(
+        itemId,
+        true,
+        false,
+        typeof audioStreamIndex === 'number' && Number.isFinite(audioStreamIndex)
+          ? audioStreamIndex
+          : undefined
+      );
+      if (workerUrl && workerUrl !== embyStreamUrl) {
+        workerFallbackUrl = workerUrl;
+      }
+    } catch (e) {
+      console.warn('[EmbyTranscode] 获取 Worker 备用地址失败:', (e as Error).message);
+    }
+
     // 换算 ffmpeg 的音频流序号（0:a:N）
     let audioPos = 0;
     try {
@@ -121,6 +140,7 @@ export async function GET(
       itemId,
       audioPos,
       inputUrl: embyStreamUrl,
+      fallbackUrl: workerFallbackUrl,
     });
 
     // 读取当前 playlist 并重写分片 URL
