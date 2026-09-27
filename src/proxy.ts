@@ -444,7 +444,13 @@ function shouldSkipAuth(pathname: string): boolean {
     '/api/client-log', // 客户端日志收集端点（无需认证）
   ];
 
-  return skipPaths.some((path) => pathname.startsWith(path));
+  if (skipPaths.some((path) => pathname.startsWith(path))) return true;
+
+  // iPlay 一次性令牌兑换接口：CF Worker 无登录态调用，令牌本身即鉴权（5 分钟过期、一次有效）
+  // 注意用精确匹配，签发接口 /api/emby/iplay-token 仍需登录
+  if (pathname === '/api/emby/iplay') return true;
+
+  return false;
 }
 
 // 配置middleware匹配规则
