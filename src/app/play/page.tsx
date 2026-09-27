@@ -2059,8 +2059,10 @@ function PlayPageClient() {
       const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
       const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
       // 元数据缺失时默认转码（保守策略：有声音比省资源重要）
-      if (tracksEmpty && !container) {
-        console.warn('⚠️ 音轨与容器信息均缺失，默认走 VPS 转码以避免无声播放');
+      // 注意：只要音轨信息缺失就转码，不再要求容器也缺失——
+      // audio-streams API 超时但容器已知时同样危险（此前导致 捕刀人/373125 EAC3 无声直连）
+      if (tracksEmpty) {
+        console.warn('⚠️ 音轨信息缺失，默认走 VPS 转码以避免无声播放');
         const embyKey = detail.source?.startsWith('emby_')
           ? detail.source.substring(5)
           : undefined;
@@ -2186,7 +2188,39 @@ function PlayPageClient() {
       const activeUrl = videoUrl || detail.episodes?.[currentEpisodeIndex] || detail.episodes?.[0] || '';
       let selectedTrackIndex = parseAudioStreamIndexFromUrl(activeUrl);
       if (selectedTrackIndex < 0) {
-        selectedTrackIndex = mappedTracks.find(t => t.isDefault)?.index ?? mappedTracks[0].index;
+        // 浏览器兼容性优先：默认音轨编码若浏览器无法解码（如 EAC3/DTS），
+        // 自动选择第一个可解码的音轨（如 AAC），避免"有画面没声音"。
+        // 用户仍可在音轨菜单中手动切换回原始音轨。
+        const browser = detectBrowser();
+        const defaultTrack = mappedTracks.find((t) => t.isDefault);
+        const isDefaultPlayable =
+          !!defaultTrack?.codec &&
+          (() => {
+            try {
+              return isCodecSupported(defaultTrack.codec, browser);
+            } catch {
+              return false;
+            }
+          })();
+        if (isDefaultPlayable) {
+          selectedTrackIndex = defaultTrack.index;
+        } else {
+          const playableTrack = mappedTracks.find((t) => {
+            try {
+              return !!t?.codec && isCodecSupported(t.codec, browser);
+            } catch {
+              return false;
+            }
+          });
+          if (playableTrack) {
+            selectedTrackIndex = playableTrack.index;
+            console.log(
+              `🎵 默认音轨 ${defaultTrack?.codec || '未知编码'} 浏览器无法解码，已自动切换到可播放音轨: ${playableTrack.name} (${playableTrack.codec})`
+            );
+          } else {
+            selectedTrackIndex = defaultTrack?.index ?? mappedTracks[0].index;
+          }
+        }
       }
       setCurrentAudioTrack(selectedTrackIndex);
 
@@ -2197,9 +2231,19 @@ function PlayPageClient() {
       const preferredLang = loadPreferredAudioLang();
       if (!preferredLang) return;
 
-      const preferredTrack = mappedTracks.find(
-        t => normalizeAudioLang(t.language) === preferredLang
+      // 偏好音轨也优先选择浏览器可解码的：先找同语言中可播放的，再退回同语言任意音轨
+      const browser2 = detectBrowser();
+      const langTracks = mappedTracks.filter(
+        (t) => normalizeAudioLang(t.language) === preferredLang
       );
+      const preferredTrack =
+        langTracks.find((t) => {
+          try {
+            return !!t?.codec && isCodecSupported(t.codec, browser2);
+          } catch {
+            return false;
+          }
+        }) || langTracks[0];
 
       if (preferredTrack && preferredTrack.index !== selectedTrackIndex) {
         console.log('🎵 找到偏好音轨，更新选择状态:', preferredTrack.name);
