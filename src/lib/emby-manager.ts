@@ -25,6 +25,8 @@ interface EmbySourceConfig {
   appendMediaSourceId?: boolean;
   transcodeMp4?: boolean;
   proxyPlay?: boolean; // 视频播放代理开关
+  workerProxyPlay?: boolean; // CF Worker 代理开关
+  workerProxyUrl?: string; // CF Worker 代理地址（从 VideoProxyConfig 注入）
   vpsAudioTranscode?: boolean; // VPS 端 ffmpeg 音频转码（DTS/TrueHD → AAC），默认启用
   embyAuthorizationHeader?: string; // 自定义 X-Emby-Authorization 头
 }
@@ -53,9 +55,20 @@ class EmbyManager {
   private async getSources(): Promise<EmbySourceConfig[]> {
     const config = await getConfig();
 
+    // CF Worker 代理地址（从全局 VideoProxyConfig 取，供 workerProxyPlay 的源使用）
+    const workerProxyUrl = config.VideoProxyConfig?.enabled && config.VideoProxyConfig?.proxyUrl
+      ? config.VideoProxyConfig.proxyUrl.replace(/\/$/, '')
+      : '';
+    const injectWorkerUrl = (s: EmbySourceConfig): EmbySourceConfig => {
+      if ((s as any).workerProxyPlay && workerProxyUrl) {
+        return { ...s, workerProxyUrl } as EmbySourceConfig;
+      }
+      return s;
+    };
+
     // 如果是新格式（Sources数组）
     if (config.EmbyConfig?.Sources && Array.isArray(config.EmbyConfig.Sources)) {
-      return config.EmbyConfig.Sources;
+      return config.EmbyConfig.Sources.map(injectWorkerUrl);
     }
 
     // 如果是旧格式（单源配置），转换为数组格式

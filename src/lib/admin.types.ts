@@ -66,6 +66,7 @@ export interface AdminConfig {
           appendMediaSourceId?: boolean;     // 拼接MediaSourceId参数
           transcodeMp4?: boolean;            // 转码mp4
           proxyPlay?: boolean;               // 视频播放代理
+          workerProxyPlay?: boolean;         // CF Worker 代理（直连播放入口走 Worker 中转）
           embyAuthorizationHeader?: string;  // 自定义 X-Emby-Authorization 头
         }>;
       };
@@ -245,6 +246,7 @@ export interface AdminConfig {
       appendMediaSourceId?: boolean;     // 拼接MediaSourceId参数
       transcodeMp4?: boolean;            // 转码mp4
       proxyPlay?: boolean;               // 视频播放代理开关
+      workerProxyPlay?: boolean;         // CF Worker 代理开关（直连播放入口走 Worker 中转）
       embyAuthorizationHeader?: string;  // 自定义 X-Emby-Authorization 头
     }>;
   };

@@ -34,6 +34,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
     appendMediaSourceId: false,
     transcodeMp4: false,
     proxyPlay: false,
+    workerProxyPlay: false,
     vpsAudioTranscode: true,
     embyAuthorizationHeader: '',
   });
@@ -68,6 +69,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
       appendMediaSourceId: false,
       transcodeMp4: false,
       proxyPlay: false,
+      workerProxyPlay: false,
       vpsAudioTranscode: true,
       embyAuthorizationHeader: '',
     });
@@ -633,6 +635,31 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       formData.proxyPlay ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 选项4.5: CF Worker 代理 */}
+              <div className='flex items-center justify-between'>
+                <div className='flex-1'>
+                  <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                    CF Worker 代理
+                  </label>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                    启用后直连播放走 Cloudflare Worker 中转，不经过 VPS（需先在"视频代理配置"中启用并填写 Worker 地址）
+                  </p>
+                </div>
+                <button
+                  type='button'
+                  onClick={() => setFormData({ ...formData, workerProxyPlay: !formData.workerProxyPlay })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    formData.workerProxyPlay ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      formData.workerProxyPlay ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>
