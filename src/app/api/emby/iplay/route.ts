@@ -6,10 +6,10 @@ import { redeemIPlayToken } from '@/lib/iplay-token';
 export const runtime = 'nodejs';
 
 /**
- * iPlay 一次性令牌兑换接口
+ * iPlay 令牌兑换接口
  * GET /api/emby/iplay?t={token}
- * 令牌有效则 302 跳转到真实 Emby 播放地址（CF Worker 会跟随跳转）；
- * 无效/过期/已用过则 410。
+ * 令牌有效（5 分钟内）则 302 跳转到真实 Emby 播放地址（CF Worker 会跟随跳转）；
+ * 无效/过期则 410。
  */
 export async function GET(request: NextRequest) {
   const token = new URL(request.url).searchParams.get('t') || '';
