@@ -39,7 +39,10 @@ function buildIPlayUrl(videoUrl: string): string {
   try {
     // URL 可能是 ASCII，btoa 前先做 UTF-8 安全处理
     const b64 = btoa(unescape(encodeURIComponent(absolute)));
-    return `iplay://play/any?type=url&url=${encodeURIComponent(b64)}`;
+    // 注意：不要对 b64 做 encodeURIComponent。iPlay 桌面版直接取 url 参数做
+    // Base64 解码（不做 URL 解码），编码过的 %2B/%2F/%3D 会导致解码失败。
+    // 标准 base64 字符集（A-Za-z0-9+/=）在 query 参数里可直接传递。
+    return `iplay://play/any?type=url&url=${b64}`;
   } catch {
     return '';
   }

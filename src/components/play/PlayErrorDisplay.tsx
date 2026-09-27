@@ -33,7 +33,8 @@ function buildIPlayLink(videoUrl: string): string {
   }
   try {
     const b64 = btoa(unescape(encodeURIComponent(absolute)));
-    return `iplay://play/any?type=url&url=${encodeURIComponent(b64)}`;
+    // 注意：不要对 b64 做 encodeURIComponent，iPlay 桌面版不做 URL 解码直接 Base64 解码
+    return `iplay://play/any?type=url&url=${b64}`;
   } catch {
     return '';
   }
