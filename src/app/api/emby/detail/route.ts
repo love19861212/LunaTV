@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { embyManager } from '@/lib/emby-manager';
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { buildEmbyMediaInfo } from '@/lib/emby-media-info';
 
 export const runtime = 'nodejs';
 
@@ -52,10 +53,12 @@ export async function GET(request: NextRequest) {
 
     // 构建 episodes 数组（电影返回单个playUrl，电视剧返回所有剧集的playUrl）
     let episodesUrls: string[] = [];
+    let episodesMediaInfo: (string | null)[] = [];
 
     if (item.Type === 'Movie') {
       // 电影：episodes数组包含一个播放URL
       episodesUrls = [await client.getStreamUrl(item.Id)];
+      episodesMediaInfo = [buildEmbyMediaInfo(item)];
     } else if (item.Type === 'Series') {
       // 电视剧：获取所有剧集的播放URL
       const allEpisodes = await client.getEpisodes(itemId);
@@ -70,6 +73,7 @@ export async function GET(request: NextRequest) {
       episodesUrls = await Promise.all(
         sortedEpisodes.map(ep => client.getStreamUrl(ep.Id))
       );
+      episodesMediaInfo = sortedEpisodes.map(ep => buildEmbyMediaInfo(ep));
     }
 
     // 返回 SearchResult 格式
@@ -85,6 +89,8 @@ export async function GET(request: NextRequest) {
       rating: item.CommunityRating || 0,
       overview: item.Overview || '',
       episodes: episodesUrls,
+      // 每集媒体格式信息（与 episodes 一一对应），如 "MKV · HEVC · EAC3 · 19.8M"
+      private_episodes_media_info: episodesMediaInfo,
       // 添加音轨信息
       private_audio_streams: audioStreams.map(stream => ({
         index: stream.index,

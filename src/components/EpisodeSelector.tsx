@@ -24,6 +24,8 @@ interface EpisodeSelectorProps {
   totalEpisodes: number;
   /** 剧集标题 */
   episodes_titles: string[];
+  /** 每集媒体格式信息（与集数一一对应，可选） */
+  episodes_media_info?: (string | null)[];
   /** 每页显示多少集，默认 50 */
   episodesPerPage?: number;
   /** 当前选中的集数（1 开始） */
@@ -49,6 +51,7 @@ interface EpisodeSelectorProps {
 const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   totalEpisodes,
   episodes_titles,
+  episodes_media_info,
   episodesPerPage = 50,
   value = 1,
   onChange,
@@ -567,6 +570,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 <button
                   key={episodeNumber}
                   onClick={() => handleEpisodeClick(episodeNumber - 1)}
+                  title={episodes_media_info?.[episodeNumber - 1] || undefined}
                   className={`group min-h-[40px] sm:min-h-[44px] min-w-[40px] sm:min-w-[44px] px-2 sm:px-3 py-2 flex items-center justify-center text-xs sm:text-sm font-semibold rounded-lg transition-all duration-200 whitespace-nowrap font-mono relative overflow-hidden active:scale-95
                     ${isActive
                       ? 'bg-linear-to-r from-green-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-green-500/30 dark:from-green-600 dark:via-emerald-600 dark:to-teal-600 dark:shadow-green-500/20 scale-105'
