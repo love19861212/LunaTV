@@ -29,6 +29,7 @@ interface Video {
   voteAverage?: number;
   rating?: number;
   mediaType: 'movie' | 'tv';
+  mediaInfo?: string | null;
 }
 
 interface EmbyView {
@@ -103,6 +104,7 @@ const embyListOptions = (
         year: item.year,
         rating: item.rating,
         mediaType: item.mediaType,
+        mediaInfo: item.mediaInfo ?? null,
       })),
       totalPages: data.totalPages ?? 0,
       currentPage: data.currentPage ?? pageParam,
@@ -538,6 +540,7 @@ export default function PrivateLibraryPage() {
                   title={video.title}
                   poster={video.poster}
                   year={video.year}
+                  mediaInfo={video.mediaInfo}
                   source={embyKey ? `emby_${embyKey}` : 'emby'}
                   source_name={embySourceName}
                   from="search"
@@ -612,6 +615,7 @@ export default function PrivateLibraryPage() {
                     title={video.title}
                     poster={video.poster}
                     year={video.year}
+                    mediaInfo={video.mediaInfo}
                     source={embyKey ? `emby_${embyKey}` : 'emby'}
                     source_name={embySourceName}
                     from="search"
@@ -627,6 +631,7 @@ export default function PrivateLibraryPage() {
                     title={video.title}
                     poster={video.poster}
                     year={video.year}
+                    mediaInfo={video.mediaInfo}
                     source={embyKey ? `emby_${embyKey}` : 'emby'}
                     source_name={embySourceName}
                     from="search"

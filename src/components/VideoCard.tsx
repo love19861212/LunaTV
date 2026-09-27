@@ -58,6 +58,7 @@ export interface VideoCardProps {
   isAggregate?: boolean;
   origin?: 'vod' | 'live';
   remarks?: string; // 备注信息（如"已完结"、"更新至20集"等）
+  mediaInfo?: string | null; // 媒体格式信息（如"MKV · HEVC · EAC3 · 19.8M"），Emby 源用
   releaseDate?: string; // 上映日期 (YYYY-MM-DD)，用于即将上映内容
   priority?: boolean; // 图片加载优先级（用于首屏可见图片）
   aiEnabled?: boolean; // AI功能是否启用（从父组件传递）
@@ -97,6 +98,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     isAggregate = false,
     origin = 'vod',
     remarks,
+    mediaInfo,
     releaseDate,
     priority = false,
     aiEnabled: aiEnabledProp,
@@ -1722,6 +1724,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
               </div>
             );
           })()}
+
+          {/* 媒体格式信息 - Emby 源显示容器/编码/码率，避免开盲盒 */}
+          {mediaInfo && (
+            <div className='flex items-center justify-center mt-1'>
+              <span className='text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-500 font-mono truncate max-w-full px-1' title={mediaInfo}>
+                {mediaInfo}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
