@@ -94,6 +94,8 @@ export async function POST(request: NextRequest) {
 
     // 保存新配置
     await db.saveAdminConfig(newConfig);
+    // 🔍 临时诊断：回显 Emby 源的 workerProxyPlay
+    const embyDebug = (newConfig as any)?.EmbyConfig?.Sources?.map((s: any) => ({ key: s.key, workerProxyPlay: s.workerProxyPlay }));
 
     // 清除缓存，强制下次重新从数据库读取
     clearConfigCache();
@@ -104,7 +106,7 @@ export async function POST(request: NextRequest) {
     // 🔥 添加 no-cache headers，防止 Docker 环境下 Next.js Router Cache 问题
     // 参考：https://github.com/vercel/next.js/issues/61184
     return NextResponse.json(
-      { success: true },
+      { success: true, _debugEmby: embyDebug },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
