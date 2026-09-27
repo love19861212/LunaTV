@@ -22,7 +22,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          envs: GHCR_TOKEN,GHCR_USER
+          envs: GHCR_TOKEN,GHCR_USER,IPLAY_TOKEN_SECRET
           script: |
             set -euo pipefail
             IMAGE='${{ inputs.image }}'
@@ -103,6 +103,10 @@ jobs:
                 [ -z "$line" ] && continue
                 printf '  -e %q\n' "$line"
               done <<< "$ENV_ARGS"
+              # iPlay 加密令牌密钥：从 GitHub Secrets 注入（备份中没有时才加）
+              if [ -n "${IPLAY_TOKEN_SECRET:-}" ] && ! grep -q '^IPLAY_TOKEN_SECRET=' <<< "$ENV_ARGS"; then
+                printf '  -e %q\n' "IPLAY_TOKEN_SECRET=${IPLAY_TOKEN_SECRET}"
+              fi
               echo ')'
             } > /tmp/lunatv_env_backup.sh
             log "容器配置已备份（密钥已屏蔽显示）"
