@@ -33,7 +33,6 @@ import DownloadButtons from '@/components/play/DownloadButtons';
 import FavoriteButton from '@/components/play/FavoriteButton';
 import NetDiskButton from '@/components/play/NetDiskButton';
 import CollapseButton from '@/components/play/CollapseButton';
-import AudioCodecWarning from '@/components/play/AudioCodecWarning';
 import { detectBrowser, isCodecSupported } from '@/lib/audio-codec-compat';
 import BackToTopButton from '@/components/play/BackToTopButton';
 import LoadingScreen from '@/components/play/LoadingScreen';
@@ -2085,6 +2084,37 @@ function PlayPageClient() {
       return buildEmbyTranscodeUrl(itemId, embyKey, Math.floor(trackIndex));
     };
 
+    // 音频不兼容且无法转码时，返回"无法播放"原因（统一进 KODI 提示页）
+    // 返回 null 表示：音频可直接播放，或可以走 VPS 转码（无需阻断）
+    const getAudioUnplayableReason = (rawTracks: any[], itemId: string, containerOverride?: string | null): string | null => {
+      if (!itemId) return null;
+      // 源配置显式关闭转码
+      if ((detail as any)?.vps_audio_transcode === false) {
+        const tracksEmpty = !Array.isArray(rawTracks) || rawTracks.length === 0;
+        const browser = detectBrowser();
+        const hasPlayable = !tracksEmpty && rawTracks.some((t: any) => {
+          try {
+            return !!t?.codec && isCodecSupported(t.codec, browser);
+          } catch {
+            return false;
+          }
+        });
+        const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
+        const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
+        // 音频兼容且容器兼容 → 可播放，不阻断
+        if (hasPlayable && !containerIncompatible) return null;
+        // 元数据缺失时无法判断，不阻断（走转码兜底逻辑）
+        if (tracksEmpty && !container) return null;
+        const codecs = [...new Set(rawTracks.map((t: any) => String(t?.codec || '').toUpperCase()).filter(Boolean))].join('、');
+        const parts: string[] = [];
+        if (codecs && !hasPlayable) parts.push(`音频 ${codecs}`);
+        if (containerIncompatible) parts.push(`${container.toUpperCase()} 容器`);
+        const desc = parts.length > 0 ? parts.join('、') : '此片格式';
+        return `${desc}浏览器无法直接播放，且当前源未开启 VPS 转码，建议用 KODI 或 Emby 客户端观看`;
+      }
+      return null;
+    };
+
     // 探测转码地址可用后切换播放（异步，不阻塞音轨 UI）
     const switchToTranscode = (
       transcodeUrl: string | null,
@@ -2114,10 +2144,11 @@ function PlayPageClient() {
           resumeTimeRef.current = artPlayerRef.current?.currentTime || 0;
           setVideoUrl(transcodeUrl);
         } else {
-          console.warn('🎵 转码启动失败，回退直连（可能无声）');
+          console.warn('🎵 转码启动失败，进无法播放页（不再静默回退直连）');
           isAudioTranscodingRef.current = false;
           transcodeInfoRef.current = null;
           setIsAudioTranscoding(false);
+          setError('VPS 音频转码启动失败，此片音频浏览器无法直接解码，建议用 KODI 或 Emby 客户端观看');
         }
       });
     };
@@ -2227,6 +2258,14 @@ function PlayPageClient() {
             return;
           }
 
+          // 音频不兼容且源未开启转码 → 直接进无法播放页（替代老 AudioCodecWarning 浮条）
+          const epAudioUnplayable = getAudioUnplayableReason(rawTracks, episodeItemId, data.container ?? null);
+          if (epAudioUnplayable) {
+            console.warn('🚫 剧集音频无法播放且未开启转码:', epAudioUnplayable);
+            setError(epAudioUnplayable);
+            return;
+          }
+
           // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
           switchToTranscode(
             maybeBuildTranscodeUrl(rawTracks, episodeItemId, data.container ?? null),
@@ -2265,6 +2304,13 @@ function PlayPageClient() {
 
     // VPS 音频转码决策（单条 DTS 音轨也要处理，所以放在 <2 判断之前）
     const movieItemId = (detail as any)?.id || '';
+    // 音频不兼容且源未开启转码 → 直接进无法播放页（替代老 AudioCodecWarning 浮条）
+    const audioUnplayable = getAudioUnplayableReason(rawTracks, movieItemId);
+    if (audioUnplayable) {
+      console.warn('🚫 音频无法播放且未开启转码:', audioUnplayable);
+      setError(audioUnplayable);
+      return;
+    }
     const movieEmbyKey = detail.source?.startsWith('emby_')
       ? detail.source.substring(5)
       : undefined;
@@ -6495,7 +6541,6 @@ function PlayPageClient() {
 
   return (
     <>
-      {!isAudioTranscoding && <AudioCodecWarning tracks={audioTracks} />}
       {isAudioTranscoding && (
         <div
           data-testid='audio-transcode-badge'
