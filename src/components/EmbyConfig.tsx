@@ -171,12 +171,6 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
       });
 
       if (!response.ok) throw new Error('保存失败');
-      const result = await response.json();
-      // 🔍 临时诊断：显示后端收到的值
-      if (result._debugEmby) {
-        showMessage('info', '后端收到: ' + JSON.stringify(result._debugEmby));
-        await new Promise(r => setTimeout(r, 5000));
-      }
 
       await refreshConfig();
       resetForm();
