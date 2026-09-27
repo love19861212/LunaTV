@@ -12,6 +12,8 @@ interface EmbyConfig {
   appendMediaSourceId?: boolean;
   transcodeMp4?: boolean;
   proxyPlay?: boolean; // 视频播放代理开关
+  workerProxyPlay?: boolean; // CF Worker 代理开关（直连播放入口走 Worker 中转）
+  workerProxyUrl?: string; // CF Worker 代理地址（由 emby-manager 从 VideoProxyConfig 注入）
   vpsAudioTranscode?: boolean; // VPS 端 ffmpeg 音频转码（DTS/TrueHD → AAC），默认启用
   key?: string; // Emby源的唯一标识
   embyAuthorizationHeader?: string; // 自定义 X-Emby-Authorization 头
@@ -106,6 +108,8 @@ export class EmbyClient {
   private appendMediaSourceId: boolean;
   private transcodeMp4: boolean;
   private proxyPlay: boolean;
+  private workerProxyPlay: boolean;
+  private workerProxyUrl: string;
   private embyKey?: string;
   private embyAuthorizationHeader: string;
 
@@ -127,6 +131,8 @@ export class EmbyClient {
     this.appendMediaSourceId = config.appendMediaSourceId || false;
     this.transcodeMp4 = config.transcodeMp4 || false;
     this.proxyPlay = config.proxyPlay || false;
+    this.workerProxyPlay = config.workerProxyPlay || false;
+    this.workerProxyUrl = (config.workerProxyUrl || '').replace(/\/$/, '');
     this.embyKey = config.key;
     this.embyAuthorizationHeader =
       config.embyAuthorizationHeader?.trim() || EmbyClient.DEFAULT_AUTHORIZATION_HEADER;
@@ -686,8 +692,12 @@ export class EmbyClient {
     await this.ensureAuthenticated();
     const token = this.apiKey || this.authToken;
 
+    // CF Worker 代理优先（省 VPS 带宽）：先算出直连 URL，再包一层 Worker
+    const useWorkerProxy = this.workerProxyPlay && !!this.workerProxyUrl && !forceDirectUrl;
+
     // 如果启用了代理播放且不是强制获取直接URL，返回代理URL
-    if (this.proxyPlay && !forceDirectUrl) {
+    // （Worker 代理开启时跳过 VPS 代理，直接走 Worker）
+    if (this.proxyPlay && !forceDirectUrl && !useWorkerProxy) {
       // 使用固定的token占位符，实际验证在服务端进行
       const subscribeToken = 'proxy';
       const filename = this.transcodeMp4 ? 'video.mp4' : 'video';
@@ -711,6 +721,15 @@ export class EmbyClient {
     // 原有的直接播放逻辑 - 使用 URLSearchParams 构建查询参数
     const query = new URLSearchParams();
 
+    // CF Worker 包裹：把直连 URL 整个 encode 后放到 Worker 路径里
+    // Worker 侧 decodeURIComponent 还原，Range 等头透传，支持拖动
+    const wrapWorker = (directUrl: string): string => {
+      if (this.workerProxyPlay && this.workerProxyUrl && !forceDirectUrl) {
+        return `${this.workerProxyUrl}/${encodeURIComponent(directUrl)}`;
+      }
+      return directUrl;
+    };
+
     if (direct) {
       // 选项3: 转码mp4 - 使用 HLS 强制音频转码
       if (this.transcodeMp4) {
@@ -726,7 +745,7 @@ export class EmbyClient {
           query.set('AudioStreamIndex', String(audioStreamIndex));
         }
 
-        return `${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/master.m3u8?${query.toString()}`;
+        return wrapWorker(`${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/master.m3u8?${query.toString()}`);
       } else {
         query.set('static', 'true');
         if (token) {
@@ -749,7 +768,7 @@ export class EmbyClient {
           }
         }
 
-        return `${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/stream?${query.toString()}`;
+        return wrapWorker(`${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/stream?${query.toString()}`);
       }
     } else {
       if (token) {
@@ -760,7 +779,7 @@ export class EmbyClient {
         query.set('AudioStreamIndex', String(audioStreamIndex));
       }
 
-      return `${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/master.m3u8?${query.toString()}`;
+      return wrapWorker(`${this.serverUrl}/Videos/${encodeURIComponent(itemId)}/master.m3u8?${query.toString()}`);
     }
   }
 
