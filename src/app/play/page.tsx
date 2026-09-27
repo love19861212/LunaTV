@@ -2048,13 +2048,23 @@ function PlayPageClient() {
       if ((detail as any)?.vps_audio_transcode === false) return null;
       const tracksEmpty = !Array.isArray(rawTracks) || rawTracks.length === 0;
       const browser = detectBrowser();
-      const hasPlayable = !tracksEmpty && rawTracks.some((t: any) => {
-        try {
-          return !!t?.codec && isCodecSupported(t.codec, browser);
-        } catch {
-          return false;
-        }
-      });
+      // 关键修正：static=true 直连模式下 Emby 服务器忽略 AudioStreamIndex 参数，
+      // 始终按文件默认音轨推流。因此必须检查默认音轨（而非任一音轨）是否浏览器可解码。
+      // 即使存在 AAC 备选音轨，只要默认是 EAC3/DTS 也必须转码（实证：捕刀人/373125）。
+      const sortedForDefault = [...(rawTracks || [])].sort(
+        (a: any, b: any) => Number(a.index ?? 0) - Number(b.index ?? 0)
+      );
+      const defaultTrackForCheck =
+        sortedForDefault.find((t: any) => t.is_default ?? t.isDefault) || sortedForDefault[0];
+      const isDefaultPlayable =
+        !tracksEmpty &&
+        (() => {
+          try {
+            return !!defaultTrackForCheck?.codec && isCodecSupported(defaultTrackForCheck.codec, browser);
+          } catch {
+            return false;
+          }
+        })();
       // 容器格式检查：mkv/avi 等浏览器无法直接播放，即使音频兼容也需转码（VPS 输出 HLS）
       const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
       const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
@@ -2068,7 +2078,7 @@ function PlayPageClient() {
           : undefined;
         return buildEmbyTranscodeUrl(itemId, embyKey, 0);
       }
-      if (hasPlayable && !containerIncompatible) return null;
+      if (isDefaultPlayable && !containerIncompatible) return null;
       if (containerIncompatible) {
         console.log('🎵 容器格式不兼容浏览器 (' + container + ')，启动 VPS 转码输出 HLS');
       }
@@ -2094,13 +2104,21 @@ function PlayPageClient() {
       if ((detail as any)?.vps_audio_transcode === false) {
         const tracksEmpty = !Array.isArray(rawTracks) || rawTracks.length === 0;
         const browser = detectBrowser();
-        const hasPlayable = !tracksEmpty && rawTracks.some((t: any) => {
-          try {
-            return !!t?.codec && isCodecSupported(t.codec, browser);
-          } catch {
-            return false;
-          }
-        });
+        // 与 maybeBuildTranscodeUrl 一致：检查默认音轨（static 模式忽略 AudioStreamIndex）
+        const sortedForDefault2 = [...(rawTracks || [])].sort(
+          (a: any, b: any) => Number(a.index ?? 0) - Number(b.index ?? 0)
+        );
+        const defaultTrack2 =
+          sortedForDefault2.find((t: any) => t.is_default ?? t.isDefault) || sortedForDefault2[0];
+        const hasPlayable =
+          !tracksEmpty &&
+          (() => {
+            try {
+              return !!defaultTrack2?.codec && isCodecSupported(defaultTrack2.codec, browser);
+            } catch {
+              return false;
+            }
+          })();
         const container = String(containerOverride ?? (detail as any)?.private_container ?? '').toLowerCase();
         const containerIncompatible = container && !['mp4', 'm4v', 'webm', 'mov'].includes(container);
         // 音频兼容且容器兼容 → 可播放，不阻断
