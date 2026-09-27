@@ -80,7 +80,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
 
   // 开始编辑
   const handleEdit = (source: any) => {
-    setFormData({ ...source });
+    setFormData({ ...source, workerProxyPlay: source.workerProxyPlay ?? false });
     if (source.ApiKey) {
       setAuthMode('apikey');
     } else if (source.Username) {
@@ -126,7 +126,7 @@ const EmbyConfig = ({ config, refreshConfig }: EmbyConfigProps) => {
     setIsLoading(true);
     try {
       // 如果没有 UserId，先测试连接获取 UserId
-      let dataToSave = { ...formData };
+      let dataToSave = { ...formData, workerProxyPlay: !!formData.workerProxyPlay };
       if (!dataToSave.UserId) {
         const testResponse = await fetch('/api/admin/emby', {
           method: 'POST',
