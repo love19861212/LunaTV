@@ -2,10 +2,25 @@
 import { randomBytes } from 'crypto';
 
 /**
- * iPlay 一次性播放令牌（内存存储，单实例）
- * 用途：前端用真实 Emby 播放地址换取一次性令牌，深链里只放令牌地址，
- * 不暴露 Emby 服务器地址和 api_key。令牌 5 分钟过期、用一次即作废。
+ * iPlay 播放令牌（内存存储，单实例）
+ * 用途：前端用真实 Emby 播放地址换取令牌，深链里只放令牌地址，
+ * 不暴露 Emby 服务器地址和 api_key。令牌 5 分钟过期，过期前可重复兑换
+ * （播放器播流时会发多个 HTTP 请求：取元数据、seek、重试，一次性令牌会断流）。
  */
+
+/**
+ * 兑换令牌：有效期内返回真实地址（可重复兑换）；
+ * 不存在或过期返回 null（过期自动清理）。
+ */
+export function redeemIPlayToken(token: string): string | null {
+  const entry = tokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    tokens.delete(token);
+    return null;
+  }
+  return entry.url;
+}
 
 interface TokenEntry {
   url: string;
@@ -33,16 +48,4 @@ export function createIPlayToken(url: string): string {
   const token = randomBytes(16).toString('hex');
   tokens.set(token, { url, expiresAt: Date.now() + TTL_MS });
   return token;
-}
-
-/**
- * 兑换令牌：有效则返回真实地址并立即作废；
- * 不存在、过期或已用过返回 null。
- */
-export function redeemIPlayToken(token: string): string | null {
-  const entry = tokens.get(token);
-  tokens.delete(token); // 无论成功失败，一次性作废
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) return null;
-  return entry.url;
 }
