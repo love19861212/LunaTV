@@ -11,9 +11,22 @@ interface PlayErrorDisplayProps {
   isEmbySource?: boolean;
 }
 
-/** 与 IPlayButton 同逻辑：拼出 iplay:// 深链 */
+/** 与 IPlayButton 同逻辑：拼出 iplay:// 深链（Worker 包裹地址先解出源站直链） */
+function unwrapWorkerUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const inner = u.searchParams.get('url');
+    if (inner && /mootvapidl\.54321\.asia/i.test(u.hostname)) {
+      return inner;
+    }
+  } catch {
+    // 解析失败就原样返回
+  }
+  return url;
+}
+
 function buildIPlayLink(videoUrl: string): string {
-  let absolute = (videoUrl || '').trim();
+  let absolute = unwrapWorkerUrl((videoUrl || '').trim());
   if (!absolute) return '';
   if (absolute.startsWith('/') && typeof window !== 'undefined') {
     absolute = window.location.origin + absolute;

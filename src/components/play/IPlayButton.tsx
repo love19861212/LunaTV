@@ -11,9 +11,26 @@ interface IPlayButtonProps {
  * 把播放地址拼成 iPlay 的 URL Scheme：
  *   iplay://play/any?type=url&url=<base64(播放地址)>
  * iPlay 收到后用 mpv/vlc 本地硬解，全格式音频（DTS-HD MA / TrueHD / EAC3）直解。
+ *
+ * 注意：如果地址是 CF Worker 包裹的（?url=...），先解出里面的 Emby 源站直链再传，
+ * 避免 mpv 经过 Worker 中转时拉流异常。源站域名用户已确认可直连。
  */
+function unwrapWorkerUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const inner = u.searchParams.get('url');
+    // 只有 host 是自家 Worker 域名时才解包，避免误伤普通带 url 参数的地址
+    if (inner && /mootvapidl\.54321\.asia/i.test(u.hostname)) {
+      return inner;
+    }
+  } catch {
+    // 解析失败就原样返回
+  }
+  return url;
+}
+
 function buildIPlayUrl(videoUrl: string): string {
-  let absolute = (videoUrl || '').trim();
+  let absolute = unwrapWorkerUrl((videoUrl || '').trim());
   if (!absolute) return '';
   // 相对地址（如 /api/emby/play/proxy/...）补成绝对地址，否则 iPlay 无法解析
   if (absolute.startsWith('/') && typeof window !== 'undefined') {
