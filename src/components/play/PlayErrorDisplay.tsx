@@ -5,10 +5,30 @@ import { useRouter } from 'next/navigation';
 interface PlayErrorDisplayProps {
   error: string;
   videoTitle?: string;
+  /** iPlay 跳转用的播放地址（Emby 源才传） */
+  iplayVideoUrl?: string;
+  /** 是否为 Emby 源 */
+  isEmbySource?: boolean;
 }
 
-export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplayProps) {
+/** 与 IPlayButton 同逻辑：拼出 iplay:// 深链 */
+function buildIPlayLink(videoUrl: string): string {
+  let absolute = (videoUrl || '').trim();
+  if (!absolute) return '';
+  if (absolute.startsWith('/') && typeof window !== 'undefined') {
+    absolute = window.location.origin + absolute;
+  }
+  try {
+    const b64 = btoa(unescape(encodeURIComponent(absolute)));
+    return `iplay://play/any?type=url&url=${encodeURIComponent(b64)}`;
+  } catch {
+    return '';
+  }
+}
+
+export default function PlayErrorDisplay({ error, videoTitle, iplayVideoUrl, isEmbySource }: PlayErrorDisplayProps) {
   const router = useRouter();
+  const showIPlay = !!isEmbySource && !!iplayVideoUrl;
 
   return (
     <div className='flex items-center justify-center min-h-screen bg-transparent'>
@@ -52,6 +72,17 @@ export default function PlayErrorDisplay({ error, videoTitle }: PlayErrorDisplay
 
         {/* 操作按钮 */}
         <div className='space-y-3'>
+          {showIPlay && (
+            <button
+              onClick={() => {
+                const link = buildIPlayLink(iplayVideoUrl!);
+                if (link) window.location.href = link;
+              }}
+              className='w-full px-6 py-3 bg-linear-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-600 hover:to-indigo-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
+            >
+              ▶️ 用 iPlay 播放
+            </button>
+          )}
           <button
             onClick={() =>
               videoTitle
