@@ -32,6 +32,7 @@ import CommentSection from '@/components/play/CommentSection';
 import DownloadButtons from '@/components/play/DownloadButtons';
 import FavoriteButton from '@/components/play/FavoriteButton';
 import NetDiskButton from '@/components/play/NetDiskButton';
+import IPlayButton from '@/components/play/IPlayButton';
 import CollapseButton from '@/components/play/CollapseButton';
 import { detectBrowser, isCodecSupported } from '@/lib/audio-codec-compat';
 import BackToTopButton from '@/components/play/BackToTopButton';
@@ -6597,7 +6598,12 @@ function PlayPageClient() {
   if (error) {
     return (
       <PageLayout activePath='/play'>
-        <PlayErrorDisplay error={error} videoTitle={videoTitle} />
+        <PlayErrorDisplay
+          error={error}
+          videoTitle={videoTitle}
+          iplayVideoUrl={videoUrl || detail?.episodes?.[currentEpisodeIndex] || detail?.episodes?.[0] || ''}
+          isEmbySource={detail?.source === 'emby' || !!detail?.source?.startsWith('emby_')}
+        />
       </PageLayout>
     );
   }
@@ -6646,6 +6652,12 @@ function PlayPageClient() {
               netdiskResults={netdiskResults}
               onSearch={handleNetDiskSearch}
               onOpenModal={() => setShowNetdiskModal(true)}
+            />
+
+            {/* iPlay 跳转按钮 - 仅 Emby 源显示，用本地 iPlay 硬解全格式音频 */}
+            <IPlayButton
+              videoUrl={videoUrl}
+              isEmbySource={detail?.source === 'emby' || !!detail?.source?.startsWith('emby_')}
             />
 
             {/* 下载按钮 - 使用独立组件优化性能 */}
