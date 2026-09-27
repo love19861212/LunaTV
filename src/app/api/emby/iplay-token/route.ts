@@ -2,15 +2,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
-import { createIPlayToken } from '@/lib/iplay-token';
+import { createEncryptedIPlayToken } from '@/lib/iplay-token';
 
 export const runtime = 'nodejs';
 
 /**
- * iPlay 一次性令牌签发接口
+ * iPlay 加密令牌签发接口
  * POST /api/emby/iplay-token  { url: string }
  * 返回 { playUrl }：可直接 base64 后拼入 iplay:// 深链的播放地址。
- * playUrl 形如  {Worker}/?url={本站令牌兑换地址}，深链里不含 Emby 真实地址。
+ * playUrl 形如  {Worker}/?iplay={加密令牌}，Worker 用共享密钥直接解密，
+ * 无需回跳本站兑换，深链里不含 Emby 真实地址。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -49,22 +50,24 @@ export async function POST(request: NextRequest) {
       // 解析失败就用原地址
     }
 
-    const token = createIPlayToken(directUrl);
+    const token = createEncryptedIPlayToken(directUrl);
 
-    const host =
-      request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
-    const proto =
-      request.headers.get('x-forwarded-proto') ||
-      (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
-    const baseUrl = process.env.SITE_BASE || `${proto}://${host}`;
-    const redeemUrl = `${baseUrl}/api/emby/iplay?t=${token}`;
-
-    // 用 CF Worker 包裹令牌兑换地址（Worker 跟随 302 到真实 Emby 地址）
-    let playUrl = redeemUrl;
+    // 用 CF Worker 包裹加密令牌（Worker 直接解密拿到真实 Emby 地址，无需回跳本站）
+    let playUrl = '';
     const workerEnabled = config.VideoProxyConfig?.enabled;
     const workerProxyUrl = (config.VideoProxyConfig?.proxyUrl || '').replace(/\/+$/, '');
     if (workerEnabled && workerProxyUrl) {
-      playUrl = `${workerProxyUrl}/?url=${encodeURIComponent(redeemUrl)}`;
+      playUrl = `${workerProxyUrl}/?iplay=${token}`;
+    } else {
+      // Worker 未启用时回退到旧的本站兑换地址（兼容）
+      const host =
+        request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+      const proto =
+        request.headers.get('x-forwarded-proto') ||
+        (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+      const baseUrl = process.env.SITE_BASE || `${proto}://${host}`;
+      // 旧版令牌（内存存储）已废弃，此处仅作兜底，正常不会走到
+      playUrl = `${baseUrl}/api/emby/iplay?t=${token}`;
     }
 
     return NextResponse.json({ playUrl });
