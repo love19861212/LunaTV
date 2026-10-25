@@ -137,22 +137,9 @@ export function useIsFavoritedQuery(
   options?: { enabled?: boolean }
 ) {
   return useQuery({
-    queryKey: ['favorites', 'check', source, id] as const,
-    queryFn: async () => {
-      const response = await fetch('/api/favorites');
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch favorites: ${response.status}`);
-      }
-
-      const data = await response.json() as Record<string, Favorite>;
-      const key = `${source}+${id}`;
-
-      return !!data[key];
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    retry: 1,
+    ...favoritesQueryOptions,
+    // All cards observe the same list; select only transforms this observer's value.
+    select: (data) => !!data[`${source}+${id}`],
     enabled: options?.enabled,
   });
 }

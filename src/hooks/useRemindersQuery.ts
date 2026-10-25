@@ -141,22 +141,9 @@ export function useIsRemindedQuery(
   options?: { enabled?: boolean }
 ) {
   return useQuery({
-    queryKey: ['reminders', 'check', source, id] as const,
-    queryFn: async () => {
-      const response = await fetch('/api/reminders');
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch reminders: ${response.status}`);
-      }
-
-      const data = await response.json() as Record<string, Reminder>;
-      const key = `${source}+${id}`;
-
-      return !!data[key];
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    retry: 1,
+    ...remindersQueryOptions,
+    // Share the request/cache while retaining a per-card boolean result.
+    select: (data) => !!data[`${source}+${id}`],
     enabled: options?.enabled,
   });
 }
